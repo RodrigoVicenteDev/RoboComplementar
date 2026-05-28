@@ -34,12 +34,12 @@ function normalizarTipoComplementar(tipo) {
   }
 
   if (value.includes("REENTREGA")) {
-    return {
-      robo: "reentrega",
-      motivoSSW: null,
-      opcaoSSW: null,
-    };
-  }
+  return {
+    robo: "reentrega",
+    motivoSSW: null,
+    opcaoSSW: "016",
+  };
+}
 
   if (value.includes("PALETIZ")) {
     return {

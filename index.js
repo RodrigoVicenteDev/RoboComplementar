@@ -1,546 +1,167 @@
-const {
-  fill,
-  setInputOrValidate,
-  getTargetWithSelector,
-  openAfterAction,
-  closeExtraPages,
-  debugScreenshot,
-  debugWriteFile,
-  findFrameWithSelector,
-  sleep,
-} = require("../ssw/helpers");
+require("dotenv").config();
+
+const { chromium } = require("playwright");
+
+const { setupLogger } = require("./utils/logger");
+const { normalizarTipoComplementar } = require("./utils/normalizers");
 
 const {
-  typeMenuOption,
-  recoverMenuPage,
-} = require("../ssw/session");
-
-const {
-  parseCtrcComDv,
-  formatMoneyBR,
-  normalizeValue,
-} = require("../utils/formatters");
-
-const LOCAL_PRESTACAO_PADRAO =
-  process.env.SSW_LOCAL_PRESTACAO ?? "O";
-
-function extrairNumeroNovoCtrc(texto) {
-  const value = normalizeValue(texto);
-
-  const match = value.match(
-    /Novo\s+CTRC:\s*([A-Z]{3})?(\d+)-(\d+)/i
-  );
-
-  if (!match) {
-    throw new Error(
-      `Não consegui extrair o Novo CTRC do texto: "${value}"`
-    );
-  }
-
-  const sigla = match[1]
-    ? match[1].toUpperCase()
-    : "";
-
-  return `${sigla}${match[2]}-${match[3]}`;
-}
-
-async function openOption222(menuPage, context) {
-  console.log("6) Abrindo opção 222...");
-
-  const selector222 = [
-    'input[name="motivo"]',
-    'input[id="motivo"]',
-    'input[name="f1"]',
-    'input[name="f2"]',
-    'a[id="3"]',
-  ].join(", ");
-
-  await debugScreenshot(
-    menuPage,
-    "debug_antes_222.png"
-  );
-
-  const page222 = await openAfterAction({
-    context,
-    currentPage: menuPage,
-    selector: selector222,
-    label: "opção 222",
-
-    action: async () => {
-      await typeMenuOption(menuPage, "222");
-
-      await debugScreenshot(
-        menuPage,
-        "debug_pos_222.png"
-      );
-    },
-  });
-
-  await debugScreenshot(
-    page222,
-    "02_tela_222_inicial.png"
-  );
-
-  return page222;
-}
-
-async function preencherTela222Inicial(
-  context,
-  page222Base,
-  item
-) {
-  console.log(
-    `8) Preenchendo tela 222 inicial para CTRC ${item.ctrc}...`
-  );
-
-  const parsed = parseCtrcComDv(item.ctrc);
-
-  const found = await getTargetWithSelector(
-    context,
-    page222Base,
-    'input[name="motivo"], input[id="motivo"]',
-    "tela 222 inicial"
-  );
-
-  const pageReal = found.page;
-  const target = found.target;
-
-  await fill(
-    target,
-    'input[name="motivo"], input[id="motivo"]',
-    item.motivoSSW
-  );
-
-  await fill(
-    target,
-    'input[name="f1"], input[id="1"]',
-    parsed.sigla
-  );
-
-  await fill(
-    target,
-    'input[name="f2"], input[id="2"]',
-    parsed.semHifenComDv
-  );
-
-  await debugScreenshot(
-    pageReal,
-    `03_tela_222_inicial_${parsed.semHifenComDv}.png`
-  );
-
-  return pageReal;
-}
-
-async function avancarTela222Inicial(
-  context,
-  page222Base
-) {
-  console.log(
-    "9) Clicando na primeira setinha da 222..."
-  );
-
-  const found = await getTargetWithSelector(
-    context,
-    page222Base,
-    'input[name="motivo"], input[id="motivo"]',
-    "tela 222 inicial"
-  );
-
-  const pageReal = found.page;
-  const target = found.target;
-
-  const selectorTela2 = [
-    'input[name="vlr_frete_valor"]',
-    'input[id="vlr_frete_valor"]',
-    'input[name="unid_emit"]',
-    'input[name="tp_doc"]',
-    'input[name="obs_1"]',
-    'a[id="2"]',
-  ].join(", ");
-
-  const pageTela2 = await openAfterAction({
-    context,
-    currentPage: pageReal,
-    selector: selectorTela2,
-    label: "segunda tela da 222",
-
-    action: async () => {
-      const seta = target.locator('a[id="3"]').first();
-
-      await seta.waitFor({
-        state: "visible",
-        timeout: 30000,
-      });
-
-      await seta.click();
-    },
-  });
-
-  await debugScreenshot(
-    pageTela2,
-    "04_tela_222_segunda_tela.png"
-  );
-
-  return pageTela2;
-}
-
-async function preencherTela222Segunda(
-  context,
-  pageTela2,
-  item
-) {
-  console.log(
-    "10) Preenchendo segunda tela da 222..."
-  );
-
-  const found = await getTargetWithSelector(
-    context,
-    pageTela2,
-    'input[name="vlr_frete_valor"], input[id="vlr_frete_valor"]',
-    "segunda tela da 222"
-  );
-
-  const pageReal = found.page;
-  const target = found.target;
-
-  const valorFrete = formatMoneyBR(
-    item.valorTotal
-  );
-
-  const obs1 = normalizeValue(item.obsSsw1);
-  const obs2 = normalizeValue(item.obsSsw2);
-  const obs3 = normalizeValue(item.obsSsw3);
-
-  await fill(
-    target,
-    'input[name="vlr_frete_valor"], input[id="vlr_frete_valor"]',
-    valorFrete
-  );
-
-  await setInputOrValidate(
-    target,
-    'input[name="unid_emit"], input[id="unid_emit"]',
-    LOCAL_PRESTACAO_PADRAO
-  );
-
-  await setInputOrValidate(
-    target,
-    'input[name="tp_doc"], input[id="tp_doc"]',
-    item.tipoDocumento
-  );
-
-  await fill(
-    target,
-    'input[name="obs_1"], input[id="obs_1"]',
-    obs1.slice(0, 90)
-  );
-
-  await fill(
-    target,
-    'input[name="obs_2"], input[id="obs_2"]',
-    obs2.slice(0, 90)
-  );
-
-  await fill(
-    target,
-    'input[name="obs_3"], input[id="obs_3"]',
-    obs3.slice(0, 90)
-  );
-
-  await debugScreenshot(
-    pageReal,
-    "05_tela_222_segunda_preenchida.png"
-  );
-
-  return pageReal;
-}
-
-async function enviarTela222Segunda(
-  context,
-  pageTela2
-) {
-  console.log(
-    "11) Clicando na setinha final da 222..."
-  );
-
-  const found = await getTargetWithSelector(
-    context,
-    pageTela2,
-    'input[name="vlr_frete_valor"], input[id="vlr_frete_valor"]',
-    "segunda tela da 222"
-  );
-
-  const target = found.target;
-
-  const seta = target
-    .locator('a[id="2"]')
-    .first();
-
-  await seta.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
-  await seta.click();
-}
-
-async function continuarAvisoTela222(
-  context,
-  pageTela2
-) {
-  console.log(
-    "12) Esperando aviso de conferência..."
-  );
-
-  const found = await getTargetWithSelector(
-    context,
-    pageTela2,
-    'div#errormsg, a[id="0"]',
-    "aviso de conferência da 222",
-    30000
-  );
-
-  const pageReal = found.page;
-  const target = found.target;
-
-  const aviso = target
-    .locator("div#errormsg")
-    .first();
-
-  await aviso.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
-  const textoAviso = await aviso
-    .innerText()
-    .catch(() => "");
-
-  console.log(
-    "Aviso detectado:",
-    textoAviso.replace(/\s+/g, " ").trim()
-  );
-
-  const continuar = target
-    .locator('a[id="0"]')
-    .first();
-
-  await continuar.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
-  await continuar.click({
-    force: true,
-  });
-
-  const deadline = Date.now() + 30000;
-
-  while (Date.now() < deadline) {
-    const pages = context
-      .pages()
-      .filter((p) => !p.isClosed());
-
-    for (const p of pages) {
-      try {
-        const label = p
-          .locator("div#errormsglabel")
-          .first();
-
-        const count = await label
-          .count()
-          .catch(() => 0);
-
-        if (count > 0) {
-          const visible = await label
-            .isVisible()
-            .catch(() => false);
-
-          const texto = await label
-            .innerText()
-            .catch(() => "");
-
-          if (
-            visible &&
-            texto.includes("Novo CTRC:")
-          ) {
-            return p;
-          }
-        }
-
-        const fr = await findFrameWithSelector(
-          p,
-          "div#errormsglabel"
-        );
-
-        if (fr) {
-          const frameLabel = fr
-            .locator("div#errormsglabel")
-            .first();
-
-          const visible = await frameLabel
-            .isVisible()
-            .catch(() => false);
-
-          const texto = await frameLabel
-            .innerText()
-            .catch(() => "");
-
-          if (
-            visible &&
-            texto.includes("Novo CTRC:")
-          ) {
-            return p;
-          }
-        }
-      } catch {}
-    }
-
-    await sleep(250);
-  }
-
-  throw new Error(
-    "Não encontrei o aviso final com Novo CTRC."
-  );
-}
-
-async function capturarNovoCtrc(
-  context,
-  pageHint
-) {
-  console.log("13) Capturando Novo CTRC...");
-
-  const found = await getTargetWithSelector(
-    context,
-    pageHint,
-    "div#errormsglabel",
-    "aviso final com Novo CTRC",
-    30000
-  );
-
-  const pageReal = found.page;
-  const target = found.target;
-
-  const label = target
-    .locator("div#errormsglabel")
-    .first();
-
-  await label.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
-  const texto = await label.innerText();
-
-  const novoCtrc =
-    extrairNumeroNovoCtrc(texto);
-
-  console.log(
-    `✅ Novo CTRC capturado: ${novoCtrc}`
-  );
-
-  const ok = target
-    .locator('a[id="0"]')
-    .first();
-
-  if (
-    (await ok.count().catch(() => 0)) > 0
-  ) {
-    await ok.click({
-      force: true,
-    }).catch(() => {});
-  }
-
-  return novoCtrc;
-}
-
-async function executar({
-  context,
-  menuPage,
-  item,
-}) {
-  console.log("======================================");
-  console.log(
-    `🤖 Processando emissão ${item.emissaoComplementarId}`
-  );
-
-  console.log(`CTRC: ${item.ctrc}`);
-
-  console.log(
-    `Tipo complementar: ${item.tipoComplementar}`
-  );
-
-  console.log(
-    `Motivo SSW: ${item.motivoSSW}`
-  );
-
-  console.log(
-    `Valor total: ${item.valorTotal}`
-  );
-
-  console.log("======================================");
-
-  await closeExtraPages(context, [
-    menuPage,
-  ]);
-
-  const menuAtual =
-    await recoverMenuPage(context);
-
-  const page222Base =
-    await openOption222(
-      menuAtual,
-      context
-    );
-
-  const pageReal1 =
-    await preencherTela222Inicial(
-      context,
-      page222Base,
-      item
-    );
-
-  const pageTela2 =
-    await avancarTela222Inicial(
-      context,
-      pageReal1
-    );
-
-  const pageReal2 =
-    await preencherTela222Segunda(
-      context,
-      pageTela2,
-      item
-    );
-
-  await enviarTela222Segunda(
-    context,
-    pageReal2
-  );
-
-  const pageAposContinuar =
-    await continuarAvisoTela222(
-      context,
-      pageReal2
-    );
-
-  const novoCtrc =
-    await capturarNovoCtrc(
-      context,
-      pageAposContinuar
-    );
-
-  await closeExtraPages(context, [
-    menuAtual,
-  ]);
+  dagoLogin,
+  buscarProxima,
+  registrarSucesso,
+  registrarErro,
+} = require("./apiDago");
+
+const { loginSSW, recoverMenuPage } = require("./ssw/session");
+const { sleep, closeExtraPages } = require("./ssw/helpers");
+
+const complementar222 = require("./robots/complementar222");
+const reentrega = require("./robots/reentrega");
+const paletizacao = require("./robots/paletizacao");
+
+const HEADLESS = String(process.env.HEADLESS ?? "1").trim() !== "0";
+
+const robots = {
+  complementar222,
+  reentrega,
+  paletizacao,
+};
+
+function prepararItem(apiResponse) {
+  const item = apiResponse?.item ?? apiResponse;
+
+  if (!item) throw new Error("Resposta da API sem item.");
+  if (!item.emissaoComplementarId) throw new Error("Item sem emissaoComplementarId.");
+  if (!item.tipoComplementar) throw new Error("Item sem tipoComplementar.");
+  if (!item.ctrc) throw new Error("Item sem CTRC.");
+
+  const configRobo = normalizarTipoComplementar(item.tipoComplementar);
 
   return {
-    numeroDocumentoGerado:
-      novoCtrc,
+    ...item,
+    ...configRobo,
   };
 }
 
-module.exports = {
-  nome: "complementar222",
-  executar,
-};
+async function run() {
+  const { LOG_FILE } = setupLogger();
+
+  console.log("🤖 Robô REAL de emissão complementar iniciado");
+  console.log("API:", process.env.DAGO_API_BASE ?? "https://api.paineldg.com.br");
+  console.log("HEADLESS:", HEADLESS);
+  console.log("DEBUG:", String(process.env.DEBUG ?? "").trim() === "1");
+  console.log("Log:", LOG_FILE);
+
+  const authToken = await dagoLogin();
+
+  const browser = await chromium.launch({
+    headless: HEADLESS,
+  });
+
+  try {
+    const context = await browser.newContext({
+      acceptDownloads: true,
+      viewport: {
+        width: 1366,
+        height: 768,
+      },
+    });
+
+    let menuPage = await context.newPage();
+    await loginSSW(menuPage);
+
+    let processadas = 0;
+    let emitidas = 0;
+    let erros = 0;
+
+    while (true) {
+      const apiResponse = await buscarProxima(authToken);
+
+      if (!apiResponse) {
+        console.log("Nenhuma emissão pendente encontrada.");
+        break;
+      }
+
+      const item = prepararItem(apiResponse);
+      const robo = robots[item.robo];
+
+      if (!robo) {
+        throw new Error(`Robô não registrado: ${item.robo}`);
+      }
+
+      try {
+        const resultado = await robo.executar({
+          context,
+          menuPage,
+          item,
+        });
+
+        await registrarSucesso(
+          authToken,
+          item.emissaoComplementarId,
+          resultado.numeroDocumentoGerado
+        );
+
+        menuPage = await recoverMenuPage(context);
+
+        processadas++;
+        emitidas++;
+
+        console.log(
+          `✅ Emissão ${item.emissaoComplementarId} registrada como EMITIDA | Documento ${resultado.numeroDocumentoGerado}`
+        );
+      } catch (err) {
+        erros++;
+
+        console.error(
+          `❌ Erro na emissão ${item.emissaoComplementarId} | CTRC ${item.ctrc}:`,
+          err?.stack || err
+        );
+
+        try {
+          await registrarErro(
+            authToken,
+            item.emissaoComplementarId,
+            String(err?.message || err).slice(0, 500),
+            robo.nome,
+            err?.stack || null
+          );
+        } catch (erroRegistro) {
+          console.error(
+            "❌ Falha ao registrar erro na API:",
+            erroRegistro?.message || erroRegistro
+          );
+        }
+
+        try {
+          menuPage = await recoverMenuPage(context);
+          await closeExtraPages(context, [menuPage]);
+        } catch (recoverErr) {
+          console.error(
+            "❌ Falha ao recuperar menu após erro:",
+            recoverErr?.stack || recoverErr
+          );
+
+          throw recoverErr;
+        }
+      }
+
+      await sleep(1000);
+    }
+
+    console.log("======================================");
+    console.log("Fim do processamento REAL");
+    console.log("Processadas:", processadas);
+    console.log("Emitidas:", emitidas);
+    console.log("Erros:", erros);
+    console.log("Log:", LOG_FILE);
+    console.log("======================================");
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+run().catch((err) => {
+  console.error("🛑 Falha geral:", err?.stack || err);
+  process.exit(1);
+});
