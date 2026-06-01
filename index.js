@@ -19,6 +19,10 @@ const complementar222 = require("./robots/complementar222");
 const reentrega = require("./robots/reentrega");
 const paletizacao = require("./robots/paletizacao");
 
+const autorizacaoSefaz007 = require("./robots/autorizacaoSefaz007");
+const autorizacaoPrefeitura009 = require("./robots/autorizacaoPrefeitura009");
+const capaComprovante040 = require("./robots/capaComprovante040");
+
 const HEADLESS = String(process.env.HEADLESS ?? "1").trim() !== "0";
 
 const robots = {
@@ -26,6 +30,12 @@ const robots = {
   reentrega,
   paletizacao,
 };
+
+const posProcessamentos = [
+  autorizacaoSefaz007,
+  autorizacaoPrefeitura009,
+  capaComprovante040,
+];
 
 function prepararItem(apiResponse) {
   const item = apiResponse?.item ?? apiResponse;
@@ -41,6 +51,51 @@ function prepararItem(apiResponse) {
     ...item,
     ...configRobo,
   };
+}
+
+async function executarPosProcessamentos(context, menuPage) {
+  console.log("======================================");
+  console.log("🤖 Iniciando pós-processamentos");
+  console.log("======================================");
+
+  let menuAtual = menuPage;
+
+  for (const pos of posProcessamentos) {
+    try {
+      console.log(`▶️ Executando pós-processamento: ${pos.nome}`);
+
+      await pos.executar({
+        context,
+        menuPage: menuAtual,
+      });
+
+      menuAtual = await recoverMenuPage(context);
+      await closeExtraPages(context, [menuAtual]);
+
+      console.log(`✅ Pós-processamento finalizado: ${pos.nome}`);
+    } catch (err) {
+      console.error(
+        `⚠️ Erro no pós-processamento ${pos.nome}:`,
+        err?.stack || err
+      );
+
+      try {
+        menuAtual = await recoverMenuPage(context);
+        await closeExtraPages(context, [menuAtual]);
+      } catch (recoverErr) {
+        console.error(
+          `⚠️ Não consegui recuperar o menu após erro no pós-processamento ${pos.nome}:`,
+          recoverErr?.stack || recoverErr
+        );
+      }
+    }
+  }
+
+  console.log("======================================");
+  console.log("✅ Pós-processamentos concluídos");
+  console.log("======================================");
+
+  return menuAtual;
 }
 
 async function run() {
@@ -148,6 +203,8 @@ async function run() {
 
       await sleep(1000);
     }
+
+    menuPage = await executarPosProcessamentos(context, menuPage);
 
     console.log("======================================");
     console.log("Fim do processamento REAL");
