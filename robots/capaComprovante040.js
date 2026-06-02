@@ -106,6 +106,8 @@ async function openOption040(menuPage, context) {
 async function gerarCapaMeus(context, page040) {
   console.log("Pós-processamento 040) Preenchendo data final e clicando Gerar meus...");
 
+  await clicarOkSeAparecer(context, page040, "Aviso pendente antes do 040");
+
   const found = await getTargetWithSelector(
     context,
     page040,
@@ -121,20 +123,26 @@ async function gerarCapaMeus(context, page040) {
 
   await fill(target, 'input[name="f2"], input[id="2"]', hoje);
 
+  await clicarOkSeAparecer(context, pageReal, "Aviso pendente antes de Gerar meus 040");
+
   await debugScreenshot(pageReal, "pos_040_data_final_preenchida.png");
 
-  const linkGerarMeus = target.locator('a[id="3"]').first();
+  const linkGerarMeus = target
+    .locator('a[id="3"], a:has-text("Gerar meus")')
+    .first();
 
-  await linkGerarMeus.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
+  const count = await linkGerarMeus.count().catch(() => 0);
 
-  const downloadPromise = pageReal.waitForEvent("download", { timeout: 10000 }).catch(() => null);
+  if (count <= 0) {
+    throw new Error("Link Gerar meus da 040 não encontrado.");
+  }
 
+  await linkGerarMeus.scrollIntoViewIfNeeded().catch(() => {});
   await linkGerarMeus.click({ force: true });
 
-  const download = await downloadPromise;
+  const download = await pageReal
+    .waitForEvent("download", { timeout: 10000 })
+    .catch(() => null);
 
   if (download) {
     console.log("Pós-processamento 040) Download detectado e ignorado.");

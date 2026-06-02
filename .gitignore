@@ -21,3 +21,5 @@ test-results/
 # os
 .DS_Store
 Thumbs.db
+
+indext.js

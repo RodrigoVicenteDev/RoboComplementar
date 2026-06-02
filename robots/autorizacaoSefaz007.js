@@ -63,6 +63,25 @@ async function clicarOkSeAparecer(context, pageHint, label = "aviso") {
   return false;
 }
 
+async function lerTextoTarget(target, selector) {
+  return await target
+    .locator(selector)
+    .first()
+    .innerText()
+    .catch(async () => {
+      return await target.locator(selector).first().inputValue().catch(() => "");
+    });
+}
+
+function parseNumeroFila(texto) {
+  const value = String(texto ?? "").replace(/\s+/g, "").trim();
+
+  if (!value) return 0;
+
+  const match = value.match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
 async function openOption007(menuPage, context) {
   console.log("Pós-processamento 007) Abrindo opção 007...");
 
@@ -115,11 +134,88 @@ async function clicarDigitadosMeus(context, page007) {
   await link.click({ force: true });
 
   await sleep(1500);
-  await clicarOkSeAparecer(context, pageReal, "Retorno Digitados / meus");
+
+  const teveAviso = await clicarOkSeAparecer(
+    context,
+    pageReal,
+    "Retorno Digitados / meus"
+  );
 
   await debugScreenshot(pageReal, "pos_007_digitados_meus.png");
 
-  return pageReal;
+  return {
+    pageReal,
+    teveAviso,
+  };
+}
+
+async function atualizarFilaELerEnviados(context, page007) {
+  const found = await getTargetWithSelector(
+    context,
+    page007,
+    'a[id="1"], a[id="6"]',
+    "Atualizar fila / Enviados à SEFAZ da 007",
+    30000
+  );
+
+  const pageReal = found.page;
+  const target = found.target;
+
+  const atualizar = target.locator('a[id="1"]').first();
+
+  await atualizar.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
+
+  await atualizar.click({ force: true });
+
+  await sleep(1500);
+
+  await clicarOkSeAparecer(context, pageReal, "Retorno Atualizar fila 007");
+
+  const textoEnviados = await lerTextoTarget(target, 'a[id="6"]');
+  const quantidade = parseNumeroFila(textoEnviados);
+
+  console.log(
+    `Pós-processamento 007) Enviados à SEFAZ: ${textoEnviados || "0"}`
+  );
+
+  return {
+    pageReal,
+    quantidade,
+  };
+}
+
+async function aguardarFilaSefazZerar(context, page007) {
+  console.log("Pós-processamento 007) Aguardando fila SEFAZ zerar...");
+
+  let pageAtual = page007;
+
+  const maxTentativas = 30;
+
+  for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+    const resultado = await atualizarFilaELerEnviados(context, pageAtual);
+
+    pageAtual = resultado.pageReal;
+
+    if (resultado.quantidade <= 0) {
+      console.log("Pós-processamento 007) Fila SEFAZ zerada.");
+      return pageAtual;
+    }
+
+    console.log(
+      `Pós-processamento 007) Ainda há ${resultado.quantidade} enviado(s) à SEFAZ. Nova consulta em 10s...`
+    );
+
+    await sleep(10000);
+  }
+
+  console.log(
+    "Pós-processamento 007) Fila SEFAZ não zerou no tempo limite. Vou tentar imprimir mesmo assim."
+  );
+
+  return pageAtual;
 }
 
 async function clicarAutorizadosSemImpressaoMeus(context, page007) {
@@ -172,12 +268,28 @@ async function executar({ context, menuPage }) {
   const menuAtual = await recoverMenuPage(context);
   const page007 = await openOption007(menuAtual, context);
 
-  const pageAposDigitados = await clicarDigitadosMeus(context, page007);
+  const resultadoDigitados = await clicarDigitadosMeus(context, page007);
 
-  console.log("Pós-processamento 007) Aguardando 60 segundos...");
-  await sleep(60000);
+  if (resultadoDigitados.teveAviso) {
+    console.log(
+      "Pós-processamento 007) Aviso no envio de Digitados / meus. Encerrando 007 sem tentar impressão."
+    );
 
-  await clicarAutorizadosSemImpressaoMeus(context, pageAposDigitados);
+    await closeExtraPages(context, [menuAtual]);
+
+    console.log("✅ Pós-processamento 007 finalizado.");
+
+    return {
+      ok: true,
+    };
+  }
+
+  const pageFilaZerada = await aguardarFilaSefazZerar(
+    context,
+    resultadoDigitados.pageReal
+  );
+
+  await clicarAutorizadosSemImpressaoMeus(context, pageFilaZerada);
 
   await closeExtraPages(context, [menuAtual]);
 
