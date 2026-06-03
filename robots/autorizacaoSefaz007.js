@@ -49,6 +49,33 @@ async function clicarOkSeAparecer(context, pageHint, label = "aviso") {
   return false;
 }
 
+async function clicarEnviarSefazMeus(context, page007) {
+  console.log("Pós-processamento 007) Clicando em Enviar à SEFAZ / meus...");
+
+  const found = await getTargetWithSelector(
+    context,
+    page007,
+    'a[id="5"]',
+    "link Enviar à SEFAZ / meus da 007",
+    30000
+  );
+
+  const pageReal = found.page;
+  const target = found.target;
+
+  const link = target.locator('a[id="5"]').first();
+
+  await link.waitFor({ state: "visible", timeout: 30000 });
+  await link.click({ force: true });
+
+  await sleep(5000);
+
+  await clicarOkSeAparecer(context, pageReal, "Retorno Enviar à SEFAZ / meus");
+
+  await debugScreenshot(pageReal, "pos_007_enviar_sefaz_meus.png");
+
+  return pageReal;
+}
 async function lerTextoTarget(target, selector) {
   return await target
     .locator(selector)
@@ -421,9 +448,14 @@ if (
   return { ok: true };
 }
 
- const pageFilaZerada = await aguardarFilaSefazZerar(
+ const pageAposEnvio = await clicarEnviarSefazMeus(
   context,
-  resultadoDigitados.pageReal,
+  resultadoDigitados.pageReal
+);
+
+const pageFilaZerada = await aguardarFilaSefazZerar(
+  context,
+  pageAposEnvio,
   resultadoDigitados.quantidade
 );
 
