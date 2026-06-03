@@ -106,35 +106,98 @@ async function openOption007(menuPage, context) {
 }
 
 async function clicarDigitadosMeus(context, page007) {
-  console.log("Pós-processamento 007) Clicando em Digitados / meus...");
+  console.log("Pós-processamento 007) Abrindo tela de Digitados...");
 
   const found = await getTargetWithSelector(
     context,
     page007,
-    'a[id="5"]',
-    "link Digitados / meus da 007",
+    'a[id="3"]',
+    "contador Digitados da 007",
     30000
   );
 
   const pageReal = found.page;
   const target = found.target;
 
-  const link = target.locator('a[id="5"]').first();
+  const contador = target.locator('a[id="3"]').first();
 
-  await link.waitFor({ state: "visible", timeout: 30000 });
-  await link.click({ force: true });
+  await contador.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
+
+  const paginaDigitadosPromise = openAfterAction({
+    context,
+    currentPage: pageReal,
+    selector: 'table, a[href*="gructr"]',
+    label: "tela Digitados",
+    action: async () => {
+      await contador.click({ force: true });
+    },
+  });
+
+  const paginaDigitados = await paginaDigitadosPromise;
 
   await sleep(5000);
 
-  const teveAviso = await clicarOkSeAparecer(
-    context,
-    pageReal,
-    "Retorno Digitados / meus"
+  await debugScreenshot(
+    paginaDigitados,
+    "pos_007_tela_digitados.png"
   );
 
-  await debugScreenshot(pageReal, "pos_007_digitados_meus.png");
+  // Conta linhas reais da tabela
+  let quantidade = 0;
 
-  return { pageReal, teveAviso };
+  try {
+    quantidade = await paginaDigitados.locator(
+      'a[href*="gructr"]'
+    ).count();
+  } catch {
+    quantidade = 0;
+  }
+
+  console.log(
+    `Pós-processamento 007) Quantidade encontrada em Digitados: ${quantidade}`
+  );
+
+  // Se não tiver nada digitado, encerra tudo
+  if (quantidade <= 0) {
+    console.log(
+      "Pós-processamento 007) Nenhum CT-e digitado encontrado. Encerrando processamento."
+    );
+
+    await paginaDigitados.close().catch(() => {});
+
+    return {
+      pageReal,
+      quantidade: 0,
+      teveAviso: true,
+    };
+  }
+
+  // Fecha tela Digitados
+  await paginaDigitados.close().catch(() => {});
+
+  await sleep(1000);
+
+  // Volta para tela principal 007
+  const page007Retorno = await getTargetWithSelector(
+    context,
+    pageReal,
+    'a[id="5"]',
+    "retorno tela principal 007",
+    30000
+  );
+
+  console.log(
+    `Pós-processamento 007) ${quantidade} CT-e(s) digitado(s) encontrados.`
+  );
+
+  return {
+    pageReal: page007Retorno.page,
+    quantidade,
+    teveAviso: false,
+  };
 }
 
 async function atualizarFilaELerEnviados(context, page007) {
@@ -289,12 +352,20 @@ async function executar({ context, menuPage }) {
 
   const resultadoDigitados = await clicarDigitadosMeus(context, page007);
 
-  if (resultadoDigitados.teveAviso) {
-    console.log("Pós-processamento 007) Aviso no envio de Digitados / meus. Encerrando 007 sem tentar impressão.");
-    await closeExtraPages(context, [menuAtual]);
-    console.log("✅ Pós-processamento 007 finalizado.");
-    return { ok: true };
-  }
+if (
+  resultadoDigitados.teveAviso ||
+  resultadoDigitados.quantidade <= 0
+) {
+  console.log(
+    "Pós-processamento 007) Nenhum CT-e digitado para processar. Encerrando."
+  );
+
+  await closeExtraPages(context, [menuAtual]);
+
+  console.log("✅ Pós-processamento 007 finalizado.");
+
+  return { ok: true };
+}
 
   const pageFilaZerada = await aguardarFilaSefazZerar(
     context,
