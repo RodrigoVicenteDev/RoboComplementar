@@ -226,8 +226,8 @@ async function atualizarFilaELerEnviados(context, page007) {
   const found = await getTargetWithSelector(
     context,
     page007,
-    'a[id="1"], a[id="6"]',
-    "Atualizar fila / Enviados à SEFAZ da 007",
+    'a[id="1"], a[id="6"], a[id="9"]',
+    "Atualizar fila / Enviados / Autorizados da 007",
     30000
   );
 
@@ -245,7 +245,6 @@ async function atualizarFilaELerEnviados(context, page007) {
 
   console.log("Pós-processamento 007) Atualizando fila SEFAZ...");
 
-  // SSW antigo + Linux/headless funciona melhor assim
   await atualizar.evaluate((el) => el.click());
 
   await sleep(4000);
@@ -260,68 +259,101 @@ async function atualizarFilaELerEnviados(context, page007) {
 
   await sleep(1000);
 
+  // =========================
+  // ENVIADOS À SEFAZ
+  // =========================
+
   const textoEnviados = await lerTextoTarget(
     target,
     'input[id="sefaz"], a[id="6"]'
   );
 
-  const textoLimpo = String(textoEnviados ?? "").trim();
+  const textoEnviadosLimpo = String(textoEnviados ?? "").trim();
 
-  const quantidade =
-    textoLimpo === ""
+  const enviados =
+    textoEnviadosLimpo === ""
       ? -1
-      : parseNumeroFila(textoLimpo);
+      : parseNumeroFila(textoEnviadosLimpo);
+
+  // =========================
+  // AUTORIZADOS SEM IMPRESSÃO
+  // =========================
+
+  let autorizados = 0;
+
+  try {
+    const textoAutorizados = await lerTextoTarget(
+      target,
+      'a[id="9"]'
+    );
+
+    autorizados = parseNumeroFila(textoAutorizados);
+  } catch {
+    autorizados = 0;
+  }
 
   console.log(
-    `Pós-processamento 007) Enviados à SEFAZ: ${
-      textoLimpo || "aguardando contador"
-    }`
+    `Pós-processamento 007) Enviados: ${textoEnviadosLimpo || "aguardando"} | Autorizados: ${autorizados}`
   );
 
   return {
     pageReal,
-    quantidade,
+    enviados,
+    autorizados,
   };
 }
 
-async function aguardarFilaSefazZerar(context, page007) {
-  console.log("Pós-processamento 007) Aguardando fila SEFAZ zerar...");
+async function aguardarFilaSefazZerar(
+  context,
+  page007,
+  quantidadeEsperada
+) {
+  console.log(
+    `Pós-processamento 007) Aguardando ${quantidadeEsperada} CT-e(s) autorizado(s)...`
+  );
 
   let pageAtual = page007;
-  const maxTentativas = 30;
-  let filaInicializada = false;
+
+  const maxTentativas = 60;
 
   for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
-    const resultado = await atualizarFilaELerEnviados(context, pageAtual);
+    const resultado = await atualizarFilaELerEnviados(
+      context,
+      pageAtual
+    );
+
     pageAtual = resultado.pageReal;
 
-    if (resultado.quantidade === -1) {
-      console.log("Pós-processamento 007) SSW ainda não atualizou contador da fila...");
+    // fila ainda nem apareceu
+    if (resultado.enviados === -1) {
+      console.log(
+        "Pós-processamento 007) SSW ainda não atualizou fila..."
+      );
+
       await sleep(5000);
       continue;
     }
 
-    if (resultado.quantidade > 0) {
-      filaInicializada = true;
-
+    // REGRA PRINCIPAL
+    if (resultado.autorizados >= quantidadeEsperada) {
       console.log(
-        `Pós-processamento 007) Ainda há ${resultado.quantidade} enviado(s) à SEFAZ. Nova consulta em 10s...`
+        `Pós-processamento 007) Quantidade autorizada atingida (${resultado.autorizados}/${quantidadeEsperada}).`
       );
 
-      await sleep(10000);
-      continue;
-    }
-
-    if (filaInicializada && resultado.quantidade === 0) {
-      console.log("Pós-processamento 007) Fila SEFAZ zerada.");
       return pageAtual;
     }
 
-    console.log("Pós-processamento 007) Aguardando inicialização da fila...");
-    await sleep(5000);
+    console.log(
+      `Pós-processamento 007) Aguardando autorizações (${resultado.autorizados}/${quantidadeEsperada})...`
+    );
+
+    await sleep(10000);
   }
 
-  console.log("Pós-processamento 007) Timeout aguardando fila SEFAZ. Vou tentar imprimir mesmo assim.");
+  console.log(
+    "Pós-processamento 007) Timeout aguardando autorizações. Vou tentar imprimir mesmo assim."
+  );
+
   return pageAtual;
 }
 
@@ -389,10 +421,11 @@ if (
   return { ok: true };
 }
 
-  const pageFilaZerada = await aguardarFilaSefazZerar(
-    context,
-    resultadoDigitados.pageReal
-  );
+ const pageFilaZerada = await aguardarFilaSefazZerar(
+  context,
+  resultadoDigitados.pageReal,
+  resultadoDigitados.quantidade
+);
 
   await clicarAutorizadosSemImpressaoMeus(context, pageFilaZerada);
 
