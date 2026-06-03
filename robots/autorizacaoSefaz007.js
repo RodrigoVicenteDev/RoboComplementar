@@ -146,15 +146,37 @@ async function clicarDigitadosMeus(context, page007) {
   );
 
   // Conta linhas reais da tabela
-  let quantidade = 0;
+  // Conta linhas cujo Digitador seja o usuário do robô
+let quantidade = 0;
 
-  try {
-    quantidade = await paginaDigitados.locator(
-      'a[href*="gructr"]'
-    ).count();
-  } catch {
-    quantidade = 0;
-  }
+try {
+  quantidade = await paginaDigitados.evaluate(() => {
+    const usuarioRobo = "dora";
+
+    const linhasXml = Array.from(
+      document.querySelectorAll("xml#xmlsr r")
+    );
+
+    if (linhasXml.length > 0) {
+      return linhasXml.filter((linha) => {
+        const digitador = linha.querySelector("f13")?.textContent || "";
+        return digitador.trim().toLowerCase() === usuarioRobo;
+      }).length;
+    }
+
+    const linhasTabela = Array.from(
+      document.querySelectorAll("tr.srtr2")
+    );
+
+    return linhasTabela.filter((linha) => {
+      const celulas = Array.from(linha.querySelectorAll("td"));
+      const digitador = celulas[13]?.innerText || "";
+      return digitador.trim().toLowerCase() === usuarioRobo;
+    }).length;
+  });
+} catch {
+  quantidade = 0;
+}
 
   console.log(
     `Pós-processamento 007) Quantidade encontrada em Digitados: ${quantidade}`
