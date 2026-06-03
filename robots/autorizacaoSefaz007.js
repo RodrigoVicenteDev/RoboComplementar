@@ -340,34 +340,29 @@ async function aguardarFilaSefazZerar(
   );
 
   let pageAtual = page007;
-
   const maxTentativas = 60;
 
   for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
-    const resultado = await atualizarFilaELerEnviados(
-      context,
-      pageAtual
-    );
+    const resultado = await atualizarFilaELerEnviados(context, pageAtual);
 
     pageAtual = resultado.pageReal;
 
-    // fila ainda nem apareceu
-    if (resultado.enviados === -1) {
-      console.log(
-        "Pós-processamento 007) SSW ainda não atualizou fila..."
-      );
-
-      await sleep(5000);
-      continue;
-    }
-
-    // REGRA PRINCIPAL
+    // REGRA PRINCIPAL TEM QUE VIR PRIMEIRO
     if (resultado.autorizados >= quantidadeEsperada) {
       console.log(
         `Pós-processamento 007) Quantidade autorizada atingida (${resultado.autorizados}/${quantidadeEsperada}).`
       );
 
       return pageAtual;
+    }
+
+    if (resultado.enviados === -1) {
+      console.log(
+        `Pós-processamento 007) Fila sem contador, mas autorizados ainda insuficientes (${resultado.autorizados}/${quantidadeEsperada}).`
+      );
+
+      await sleep(5000);
+      continue;
     }
 
     console.log(
