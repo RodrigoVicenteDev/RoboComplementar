@@ -140,27 +140,54 @@ async function atualizarFilaELerEnviados(context, page007) {
   const pageReal = found.page;
   const target = found.target;
 
+  await debugScreenshot(pageReal, "pos_007_antes_atualizar_fila.png");
+
   const atualizar = target.locator('a[id="1"]').first();
 
-  await atualizar.waitFor({ state: "visible", timeout: 30000 });
-  await atualizar.click({ force: true });
+  await atualizar.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
 
-  await sleep(3000);
+  console.log("Pós-processamento 007) Atualizando fila SEFAZ...");
 
-  await clicarOkSeAparecer(context, pageReal, "Retorno Atualizar fila 007");
+  // SSW antigo + Linux/headless funciona melhor assim
+  await atualizar.evaluate((el) => el.click());
 
-  const textoEnviados = await lerTextoTarget(target, 'a[id="6"]');
+  await sleep(4000);
+
+  await debugScreenshot(pageReal, "pos_007_apos_atualizar_fila.png");
+
+  await clicarOkSeAparecer(
+    context,
+    pageReal,
+    "Retorno Atualizar fila 007"
+  );
+
+  await sleep(1000);
+
+  const textoEnviados = await lerTextoTarget(
+    target,
+    'input[id="sefaz"], a[id="6"]'
+  );
+
   const textoLimpo = String(textoEnviados ?? "").trim();
 
-  const quantidade = textoLimpo === "" ? -1 : parseNumeroFila(textoLimpo);
+  const quantidade =
+    textoLimpo === ""
+      ? -1
+      : parseNumeroFila(textoLimpo);
 
   console.log(
     `Pós-processamento 007) Enviados à SEFAZ: ${
-      textoLimpo === "" ? "aguardando contador" : textoLimpo
+      textoLimpo || "aguardando contador"
     }`
   );
 
-  return { pageReal, quantidade };
+  return {
+    pageReal,
+    quantidade,
+  };
 }
 
 async function aguardarFilaSefazZerar(context, page007) {
