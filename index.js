@@ -13,7 +13,13 @@ const {
 } = require("./apiDago");
 
 const { loginSSW, recoverMenuPage } = require("./ssw/session");
-const { sleep, closeExtraPages } = require("./ssw/helpers");
+const {
+  sleep,
+  closeExtraPages,
+  getTargetWithSelector,
+  fill,
+} = require("./ssw/helpers");
+const { parseCtrcComDv } = require("./utils/formatters");
 
 const complementar222 = require("./robots/complementar222");
 const reentrega = require("./robots/reentrega");
@@ -52,41 +58,100 @@ function prepararItem(apiResponse) {
     ...configRobo,
   };
 }
+async function trocarUnidadeMenu(context, menuPage, unidade) {
+  console.log(`🔄 Alterando unidade do menu para ${unidade}...`);
 
-async function executarPosProcessamentos(context, menuPage) {
+  const menuAtual = await recoverMenuPage(context);
+
+  const found = await getTargetWithSelector(
+    context,
+    menuAtual,
+    'input[name="f2"], input[id="2"]',
+    "campo Unidade do menu",
+    30000
+  );
+
+  const target = found.target;
+
+  await fill(target, 'input[name="f2"], input[id="2"]', unidade);
+
+  await target
+    .locator('input[name="f2"], input[id="2"]')
+    .first()
+    .evaluate((el) => {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.blur();
+    })
+    .catch(() => {});
+
+  await sleep(2000);
+
+  console.log(`✅ Unidade do menu alterada para ${unidade}.`);
+
+  return found.page;
+}
+
+async function executarPosProcessamentos(context, menuPage, unidadesProcessadas) {
   console.log("======================================");
   console.log("🤖 Iniciando pós-processamentos");
   console.log("======================================");
 
   let menuAtual = menuPage;
 
-  for (const pos of posProcessamentos) {
+  const unidades = Array.from(unidadesProcessadas || []).filter(Boolean);
+
+  if (unidades.length <= 0) {
+    console.log("Nenhuma unidade processada. Pós-processamentos não serão executados.");
+    return menuAtual;
+  }
+
+  console.log("Unidades para pós-processamento:", unidades.join(", "));
+
+  for (const unidade of unidades) {
+    console.log("======================================");
+    console.log(`🏢 Pós-processamentos da unidade ${unidade}`);
+    console.log("======================================");
+
     try {
-      console.log(`▶️ Executando pós-processamento: ${pos.nome}`);
-
-      await pos.executar({
-        context,
-        menuPage: menuAtual,
-      });
-
-      menuAtual = await recoverMenuPage(context);
+      menuAtual = await trocarUnidadeMenu(context, menuAtual, unidade);
       await closeExtraPages(context, [menuAtual]);
-
-      console.log(`✅ Pós-processamento finalizado: ${pos.nome}`);
     } catch (err) {
       console.error(
-        `⚠️ Erro no pós-processamento ${pos.nome}:`,
+        `⚠️ Não consegui alterar unidade para ${unidade}:`,
         err?.stack || err
       );
+      continue;
+    }
 
+    for (const pos of posProcessamentos) {
       try {
+        console.log(`▶️ Executando pós-processamento: ${pos.nome} | Unidade ${unidade}`);
+
+        await pos.executar({
+          context,
+          menuPage: menuAtual,
+        });
+
         menuAtual = await recoverMenuPage(context);
         await closeExtraPages(context, [menuAtual]);
-      } catch (recoverErr) {
+
+        console.log(`✅ Pós-processamento finalizado: ${pos.nome} | Unidade ${unidade}`);
+      } catch (err) {
         console.error(
-          `⚠️ Não consegui recuperar o menu após erro no pós-processamento ${pos.nome}:`,
-          recoverErr?.stack || recoverErr
+          `⚠️ Erro no pós-processamento ${pos.nome} | Unidade ${unidade}:`,
+          err?.stack || err
         );
+
+        try {
+          menuAtual = await recoverMenuPage(context);
+          await closeExtraPages(context, [menuAtual]);
+        } catch (recoverErr) {
+          console.error(
+            `⚠️ Não consegui recuperar o menu após erro no pós-processamento ${pos.nome}:`,
+            recoverErr?.stack || recoverErr
+          );
+        }
       }
     }
   }
@@ -97,7 +162,6 @@ async function executarPosProcessamentos(context, menuPage) {
 
   return menuAtual;
 }
-
 async function run() {
   const { LOG_FILE } = setupLogger();
 
@@ -129,6 +193,8 @@ async function run() {
     let emitidas = 0;
     let erros = 0;
 
+    const unidadesProcessadas = new Set();
+
     while (true) {
       const apiResponse = await buscarProxima(authToken);
 
@@ -139,6 +205,9 @@ async function run() {
 
       const item = prepararItem(apiResponse);
       const robo = robots[item.robo];
+
+    const parsedCtrc = parseCtrcComDv(item.ctrc);
+    unidadesProcessadas.add(parsedCtrc.sigla);
 
       if (!robo) {
         throw new Error(`Robô não registrado: ${item.robo}`);
@@ -204,7 +273,11 @@ async function run() {
       await sleep(1000);
     }
 
-    menuPage = await executarPosProcessamentos(context, menuPage);
+    menuPage = await executarPosProcessamentos(
+  context,
+  menuPage,
+  unidadesProcessadas
+);
 
     console.log("======================================");
     console.log("Fim do processamento REAL");
