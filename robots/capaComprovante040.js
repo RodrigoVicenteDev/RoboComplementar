@@ -74,18 +74,40 @@ async function clicarOkSeAparecer(context, pageHint, label = "aviso") {
   return false;
 }
 
+async function salvarHtmlDebug(page, nome) {
+  try {
+    const html = await page.content();
+    const fs = require("fs");
+    const path = require("path");
+
+    const debugDir = path.resolve(__dirname, "../debug");
+    if (!fs.existsSync(debugDir)) {
+      fs.mkdirSync(debugDir, { recursive: true });
+    }
+
+    const filePath = path.join(debugDir, nome);
+    fs.writeFileSync(filePath, html, "utf8");
+
+    console.log(`📄 html salvo: ${filePath}`);
+  } catch (err) {
+    console.log(`⚠️ Não consegui salvar HTML debug ${nome}: ${err.message}`);
+  }
+}
+
 async function openOption040(menuPage, context) {
   console.log("Pós-processamento 040) Abrindo opção 040...");
 
   const selector040 = [
-    'input[name="f1"]',
-    'input[id="1"]',
+    'body:has-text("040 - Emissão Capa")',
+    'body:has-text("Gerar nova Capa")',
+    'a[id="3"]',
+    'a:has-text("Gerar meus")',
     'input[name="f2"]',
     'input[id="2"]',
-    'a[id="3"]',
   ].join(", ");
 
   await debugScreenshot(menuPage, "debug_antes_040.png");
+  await salvarHtmlDebug(menuPage, "debug_antes_040.html");
 
   const page040 = await openAfterAction({
     context,
@@ -94,11 +116,16 @@ async function openOption040(menuPage, context) {
     label: "opção 040",
     action: async () => {
       await typeMenuOption(menuPage, "40");
-      await debugScreenshot(menuPage, "debug_pos_040.png");
+      await sleep(1000);
+      await debugScreenshot(menuPage, "debug_pos_digitou_040.png");
+      await salvarHtmlDebug(menuPage, "debug_pos_digitou_040.html");
     },
   });
 
+  await sleep(5000);
+
   await debugScreenshot(page040, "pos_040_tela_inicial.png");
+  await salvarHtmlDebug(page040, "pos_040_tela_inicial.html");
 
   return page040;
 }
@@ -106,55 +133,94 @@ async function openOption040(menuPage, context) {
 async function gerarCapaMeus(context, page040) {
   console.log("Pós-processamento 040) Preenchendo data final e clicando Gerar meus...");
 
+  await debugScreenshot(page040, "pos_040_antes_qualquer_acao.png");
+  await salvarHtmlDebug(page040, "pos_040_antes_qualquer_acao.html");
+
   await clicarOkSeAparecer(context, page040, "Aviso pendente antes do 040");
 
-  const found = await getTargetWithSelector(
+  const foundCampo = await getTargetWithSelector(
     context,
     page040,
     'input[name="f2"], input[id="2"]',
     "campo data final da opção 040",
-    30000
+    60000
   );
 
-  const pageReal = found.page;
-  const target = found.target;
+  const pageReal = foundCampo.page;
+  const targetCampo = foundCampo.target;
+
+  await debugScreenshot(pageReal, "pos_040_campo_data_encontrado.png");
+  await salvarHtmlDebug(pageReal, "pos_040_campo_data_encontrado.html");
 
   const hoje = hojeDDMMAA();
 
-  await fill(target, 'input[name="f2"], input[id="2"]', hoje);
+  await fill(targetCampo, 'input[name="f2"], input[id="2"]', hoje);
+
+  await sleep(1000);
+
+  await debugScreenshot(pageReal, "pos_040_data_final_preenchida.png");
+  await salvarHtmlDebug(pageReal, "pos_040_data_final_preenchida.html");
 
   await clicarOkSeAparecer(context, pageReal, "Aviso pendente antes de Gerar meus 040");
 
-  await debugScreenshot(pageReal, "pos_040_data_final_preenchida.png");
+  console.log("Pós-processamento 040) Procurando link Gerar meus após preencher data...");
 
-  const linkGerarMeus = target
+  const foundGerar = await getTargetWithSelector(
+    context,
+    pageReal,
+    'a[id="3"], a:has-text("Gerar meus")',
+    "link Gerar meus da 040",
+    60000
+  );
+
+  const pageGerar = foundGerar.page;
+  const targetGerar = foundGerar.target;
+
+  await debugScreenshot(pageGerar, "pos_040_link_gerar_meus_encontrado.png");
+  await salvarHtmlDebug(pageGerar, "pos_040_link_gerar_meus_encontrado.html");
+
+  const linkGerarMeus = targetGerar
     .locator('a[id="3"], a:has-text("Gerar meus")')
     .first();
 
-  const count = await linkGerarMeus.count().catch(() => 0);
-
-  if (count <= 0) {
-    throw new Error("Link Gerar meus da 040 não encontrado.");
-  }
+  await linkGerarMeus.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
 
   await linkGerarMeus.scrollIntoViewIfNeeded().catch(() => {});
+
+  const downloadPromise = pageGerar
+    .waitForEvent("download", { timeout: 15000 })
+    .catch(() => null);
+
+  console.log("Pós-processamento 040) Clicando em Gerar meus...");
+
+  await debugScreenshot(pageGerar, "pos_040_antes_click_gerar_meus.png");
+  await salvarHtmlDebug(pageGerar, "pos_040_antes_click_gerar_meus.html");
+
   await linkGerarMeus.click({ force: true });
 
-  const download = await pageReal
-    .waitForEvent("download", { timeout: 10000 })
-    .catch(() => null);
+  await sleep(2000);
+
+  await debugScreenshot(pageGerar, "pos_040_depois_click_gerar_meus.png");
+  await salvarHtmlDebug(pageGerar, "pos_040_depois_click_gerar_meus.html");
+
+  const download = await downloadPromise;
 
   if (download) {
     console.log("Pós-processamento 040) Download detectado e ignorado.");
     await download.delete().catch(() => {});
   }
 
-  await sleep(1500);
-  await clicarOkSeAparecer(context, pageReal, "Retorno Gerar meus 040");
+  await clicarOkSeAparecer(context, pageGerar, "Retorno Gerar meus 040");
 
-  await debugScreenshot(pageReal, "pos_040_gerar_meus.png");
+  await sleep(1000);
 
-  return pageReal;
+  await debugScreenshot(pageGerar, "pos_040_gerar_meus_final.png");
+  await salvarHtmlDebug(pageGerar, "pos_040_gerar_meus_final.html");
+
+  return pageGerar;
 }
 
 async function executar({ context, menuPage }) {
@@ -165,6 +231,10 @@ async function executar({ context, menuPage }) {
   await closeExtraPages(context, [menuPage]);
 
   const menuAtual = await recoverMenuPage(context);
+
+  await debugScreenshot(menuAtual, "pos_040_menu_recuperado.png");
+  await salvarHtmlDebug(menuAtual, "pos_040_menu_recuperado.html");
+
   const page040 = await openOption040(menuAtual, context);
 
   await gerarCapaMeus(context, page040);

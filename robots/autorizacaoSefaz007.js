@@ -43,20 +43,6 @@ async function clicarOkSeAparecer(context, pageHint, label = "aviso") {
       } catch {}
     }
 
-    if (pageHint && !pageHint.isClosed()) {
-      try {
-        const ok = pageHint.locator('a.dialog:has-text("OK"), a[id="0"]').first();
-
-        if (await ok.isVisible().catch(() => false)) {
-          const texto = await pageHint.locator("div#errormsglabel").innerText().catch(() => "");
-          console.log(`${label}: ${texto.replace(/\s+/g, " ").trim()}`);
-          await ok.click({ force: true }).catch(() => {});
-          await sleep(500);
-          return true;
-        }
-      } catch {}
-    }
-
     await sleep(250);
   }
 
@@ -75,7 +61,6 @@ async function lerTextoTarget(target, selector) {
 
 function parseNumeroFila(texto) {
   const value = String(texto ?? "").replace(/\s+/g, "").trim();
-
   if (!value) return 0;
 
   const match = value.match(/\d+/);
@@ -88,8 +73,8 @@ async function openOption007(menuPage, context) {
   const selector007 = [
     'a[id="5"]',
     'a[id="link_imp_meus_sem_imp_2"]',
-    'input[name="f13"]',
-    'input[id="13"]',
+    'a:has-text("Enviar à SEFAZ")',
+    'body:has-text("Autorização de CT-es pelo SEFAZ")',
   ].join(", ");
 
   await debugScreenshot(menuPage, "debug_antes_007.png");
@@ -105,6 +90,7 @@ async function openOption007(menuPage, context) {
     },
   });
 
+  await sleep(3000);
   await debugScreenshot(page007, "pos_007_tela_inicial.png");
 
   return page007;
@@ -126,14 +112,10 @@ async function clicarDigitadosMeus(context, page007) {
 
   const link = target.locator('a[id="5"]').first();
 
-  await link.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
+  await link.waitFor({ state: "visible", timeout: 30000 });
   await link.click({ force: true });
 
-  await sleep(1500);
+  await sleep(5000);
 
   const teveAviso = await clicarOkSeAparecer(
     context,
@@ -143,10 +125,7 @@ async function clicarDigitadosMeus(context, page007) {
 
   await debugScreenshot(pageReal, "pos_007_digitados_meus.png");
 
-  return {
-    pageReal,
-    teveAviso,
-  };
+  return { pageReal, teveAviso };
 }
 
 async function atualizarFilaELerEnviados(context, page007) {
@@ -163,58 +142,65 @@ async function atualizarFilaELerEnviados(context, page007) {
 
   const atualizar = target.locator('a[id="1"]').first();
 
-  await atualizar.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
+  await atualizar.waitFor({ state: "visible", timeout: 30000 });
   await atualizar.click({ force: true });
 
-  await sleep(1500);
+  await sleep(3000);
 
   await clicarOkSeAparecer(context, pageReal, "Retorno Atualizar fila 007");
 
   const textoEnviados = await lerTextoTarget(target, 'a[id="6"]');
-  const quantidade = parseNumeroFila(textoEnviados);
+  const textoLimpo = String(textoEnviados ?? "").trim();
+
+  const quantidade = textoLimpo === "" ? -1 : parseNumeroFila(textoLimpo);
 
   console.log(
-    `Pós-processamento 007) Enviados à SEFAZ: ${textoEnviados || "0"}`
+    `Pós-processamento 007) Enviados à SEFAZ: ${
+      textoLimpo === "" ? "aguardando contador" : textoLimpo
+    }`
   );
 
-  return {
-    pageReal,
-    quantidade,
-  };
+  return { pageReal, quantidade };
 }
 
 async function aguardarFilaSefazZerar(context, page007) {
   console.log("Pós-processamento 007) Aguardando fila SEFAZ zerar...");
 
   let pageAtual = page007;
-
   const maxTentativas = 30;
+  let filaInicializada = false;
 
   for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
     const resultado = await atualizarFilaELerEnviados(context, pageAtual);
-
     pageAtual = resultado.pageReal;
 
-    if (resultado.quantidade <= 0) {
+    if (resultado.quantidade === -1) {
+      console.log("Pós-processamento 007) SSW ainda não atualizou contador da fila...");
+      await sleep(5000);
+      continue;
+    }
+
+    if (resultado.quantidade > 0) {
+      filaInicializada = true;
+
+      console.log(
+        `Pós-processamento 007) Ainda há ${resultado.quantidade} enviado(s) à SEFAZ. Nova consulta em 10s...`
+      );
+
+      await sleep(10000);
+      continue;
+    }
+
+    if (filaInicializada && resultado.quantidade === 0) {
       console.log("Pós-processamento 007) Fila SEFAZ zerada.");
       return pageAtual;
     }
 
-    console.log(
-      `Pós-processamento 007) Ainda há ${resultado.quantidade} enviado(s) à SEFAZ. Nova consulta em 10s...`
-    );
-
-    await sleep(10000);
+    console.log("Pós-processamento 007) Aguardando inicialização da fila...");
+    await sleep(5000);
   }
 
-  console.log(
-    "Pós-processamento 007) Fila SEFAZ não zerou no tempo limite. Vou tentar imprimir mesmo assim."
-  );
-
+  console.log("Pós-processamento 007) Timeout aguardando fila SEFAZ. Vou tentar imprimir mesmo assim.");
   return pageAtual;
 }
 
@@ -234,10 +220,7 @@ async function clicarAutorizadosSemImpressaoMeus(context, page007) {
 
   const link = target.locator('a[id="link_imp_meus_sem_imp_2"]').first();
 
-  await link.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
+  await link.waitFor({ state: "visible", timeout: 30000 });
 
   const downloadPromise = pageReal.waitForEvent("download", { timeout: 10000 }).catch(() => null);
 
@@ -271,17 +254,10 @@ async function executar({ context, menuPage }) {
   const resultadoDigitados = await clicarDigitadosMeus(context, page007);
 
   if (resultadoDigitados.teveAviso) {
-    console.log(
-      "Pós-processamento 007) Aviso no envio de Digitados / meus. Encerrando 007 sem tentar impressão."
-    );
-
+    console.log("Pós-processamento 007) Aviso no envio de Digitados / meus. Encerrando 007 sem tentar impressão.");
     await closeExtraPages(context, [menuAtual]);
-
     console.log("✅ Pós-processamento 007 finalizado.");
-
-    return {
-      ok: true,
-    };
+    return { ok: true };
   }
 
   const pageFilaZerada = await aguardarFilaSefazZerar(
@@ -295,9 +271,7 @@ async function executar({ context, menuPage }) {
 
   console.log("✅ Pós-processamento 007 finalizado.");
 
-  return {
-    ok: true,
-  };
+  return { ok: true };
 }
 
 module.exports = {
