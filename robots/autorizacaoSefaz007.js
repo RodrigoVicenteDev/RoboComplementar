@@ -71,10 +71,10 @@ async function openOption007(menuPage, context) {
   console.log("Pós-processamento 007) Abrindo opção 007...");
 
   const selector007 = [
-    'a[id="5"]',
+    'input[id="sefaz"]',
+    'a[id="1"][onclick*="ATU"]',
+    'a[id="5"][onclick*="ENV"]',
     'a[id="link_imp_meus_sem_imp_2"]',
-    'a:has-text("Enviar à SEFAZ")',
-    'body:has-text("Autorização de CT-es pelo SEFAZ")',
   ].join(", ");
 
   await debugScreenshot(menuPage, "debug_antes_007.png");
@@ -90,10 +90,19 @@ async function openOption007(menuPage, context) {
     },
   });
 
-  await sleep(3000);
-  await debugScreenshot(page007, "pos_007_tela_inicial.png");
+  await sleep(5000);
 
-  return page007;
+  const found = await getTargetWithSelector(
+    context,
+    page007,
+    selector007,
+    "tela real da opção 007",
+    60000
+  );
+
+  await debugScreenshot(found.page, "pos_007_tela_inicial.png");
+
+  return found.page;
 }
 
 async function clicarDigitadosMeus(context, page007) {
