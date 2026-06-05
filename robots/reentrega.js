@@ -167,6 +167,32 @@ async function clicarContinuarSeAparecer(context, pageHint, label = "aviso") {
 
   return false;
 }
+async function preencherCampoCurtoObrigatorio(target, selector, valor, nomeCampo) {
+  const loc = target.locator(selector).first();
+
+  await loc.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
+
+  await loc.click({ force: true }).catch(() => {});
+  await loc.fill("");
+
+  await loc.evaluate((el, value) => {
+    el.value = value;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+  }, String(valor));
+
+  const valorFinal = await loc.inputValue().catch(() => "");
+
+  if (String(valorFinal).trim().toUpperCase() !== String(valor).trim().toUpperCase()) {
+    throw new Error(
+      `${nomeCampo} não foi preenchido corretamente. Esperado "${valor}", ficou "${valorFinal}".`
+    );
+  }
+}
 
 async function preencherTela016Reentrega(context, pageTela2, item) {
   console.log("10) Preenchendo tela de reentrega da 016...");
@@ -174,7 +200,7 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
   const found = await getTargetWithSelector(
     context,
     pageTela2,
-    'input[name="f3"], input[id="3"]',
+    'input[name="f2"], input[id="2"], input[name="f3"], input[id="3"]',
     "tela de reentrega da 016"
   );
 
@@ -184,26 +210,28 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
   const obs1 = normalizeValue(item.obsSsw1);
   const obs2 = normalizeValue(item.obsSsw2);
 
-  const localPrestacao = target.locator(
-    'input[name="f2"], input[id="2"]'
-  ).first();
+  const localPrestacao = process.env.SSW_LOCAL_PRESTACAO ?? "O";
+  const tipoDocumento = normalizeValue(item.tipoDocumento || "C").toUpperCase();
 
-  if (await localPrestacao.isVisible().catch(() => false)) {
-    const disabled = await localPrestacao.isDisabled().catch(() => true);
+  await preencherCampoCurtoObrigatorio(
+    target,
+    'input[name="f2"], input[id="2"]',
+    localPrestacao,
+    "Local de prestação"
+  );
 
-    if (!disabled) {
-      await setInputOrValidate(
-        target,
-        'input[name="f2"], input[id="2"]',
-        "O"
-      );
-    }
-  }
-
-  await setInputOrValidate(
+  await preencherCampoCurtoObrigatorio(
     target,
     'input[name="f3"], input[id="3"]',
-    "C"
+    tipoDocumento,
+    "Tipo do documento"
+  );
+
+  await preencherCampoCurtoObrigatorio(
+    target,
+    'input[name="f4"], input[id="4"]',
+    "1",
+    "Tipo de frete"
   );
 
   await fill(target, 'input[name="f7"], input[id="7"]', obs1.slice(0, 55));
