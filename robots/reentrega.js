@@ -184,7 +184,6 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
   const obs1 = normalizeValue(item.obsSsw1);
   const obs2 = normalizeValue(item.obsSsw2);
 
-  // LOCAL DA PRESTAÇÃO = O
   const localPrestacao = target.locator(
     'input[name="f2"], input[id="2"]'
   ).first();
@@ -201,7 +200,6 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
     }
   }
 
-  // TIPO DOCUMENTO = C
   await setInputOrValidate(
     target,
     'input[name="f3"], input[id="3"]',
@@ -222,10 +220,11 @@ async function enviarTela016Reentrega(context, pageTela2) {
   const found = await getTargetWithSelector(
     context,
     pageTela2,
-    'input[name="f7"], input[id="7"]',
+    'input[name="f7"], input[id="7"], a[id="9"]',
     "tela de reentrega da 016"
   );
 
+  const pageReal = found.page;
   const target = found.target;
 
   const seta = target.locator('a[id="9"]').first();
@@ -235,11 +234,53 @@ async function enviarTela016Reentrega(context, pageTela2) {
     timeout: 30000,
   });
 
-  await seta.click();
+  await debugScreenshot(pageReal, "06_antes_click_seta_final_016.png");
+
+  console.log("11.1) Disparando ajaxEnvia REENT da 016...");
+
+  await seta.evaluate((el) => el.click());
+
+  await sleep(1500);
+
+  await debugScreenshot(pageReal, "07_depois_click_seta_final_016.png");
+
+  const modalVisivel = await pageReal
+    .locator('div#errormsg, div#errormsglabel, a.dialog:has-text("Continuar")')
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  const processando = await pageReal
+    .locator("#procimg")
+    .evaluate((el) => {
+      const style = window.getComputedStyle(el);
+      return style.visibility !== "hidden" && style.display !== "none";
+    })
+    .catch(() => false);
+
+  if (!modalVisivel && !processando) {
+    console.log("⚠️ Após clique final não apareceu modal/processamento. Tentando chamada direta ajaxEnvia('REENT', 0)...");
+
+    await target.evaluate(() => {
+      if (typeof ajaxEnvia !== "function") {
+        throw new Error("Função ajaxEnvia não encontrada na tela 016.");
+      }
+
+      ajaxEnvia("REENT", 0);
+    });
+
+    await sleep(1500);
+
+    await debugScreenshot(pageReal, "08_depois_ajax_direto_reent_016.png");
+  }
+
+  return pageReal;
 }
 
 async function confirmarGeracao016(context, pageHint) {
   console.log("12) Esperando confirmação da geração da reentrega...");
+
+  await debugScreenshot(pageHint, "09_antes_confirmar_modal_016.png");
 
   const clicou = await clicarContinuarSeAparecer(
     context,
@@ -248,8 +289,12 @@ async function confirmarGeracao016(context, pageHint) {
   );
 
   if (!clicou) {
+    await debugScreenshot(pageHint, "10_modal_continuar_nao_encontrado_016.png");
+
     throw new Error("Não encontrei o modal de confirmação da geração da reentrega.");
   }
+
+  await debugScreenshot(pageHint, "11_depois_continuar_modal_016.png");
 
   const deadline = Date.now() + 30000;
 
@@ -266,6 +311,7 @@ async function confirmarGeracao016(context, pageHint) {
           const texto = await label.innerText().catch(() => "");
 
           if (visible && texto.includes("Novo CTRC:")) {
+            await debugScreenshot(p, "12_novo_ctrc_reentrega_encontrado.png");
             return p;
           }
         }
@@ -278,6 +324,7 @@ async function confirmarGeracao016(context, pageHint) {
           const texto = await frameLabel.innerText().catch(() => "");
 
           if (visible && texto.includes("Novo CTRC:")) {
+            await debugScreenshot(p, "12_novo_ctrc_reentrega_encontrado_frame.png");
             return p;
           }
         }
@@ -286,6 +333,8 @@ async function confirmarGeracao016(context, pageHint) {
 
     await sleep(250);
   }
+
+  await debugScreenshot(pageHint, "13_falha_novo_ctrc_reentrega_016.png");
 
   throw new Error("Não encontrei o aviso final com Novo CTRC da reentrega.");
 }
@@ -341,9 +390,9 @@ async function executar({ context, menuPage, item }) {
   const pageTela2 = await avancarTela016Inicial(context, pageReal1);
   const pageReal2 = await preencherTela016Reentrega(context, pageTela2, item);
 
-  await enviarTela016Reentrega(context, pageReal2);
+  const pageAposEnvio = await enviarTela016Reentrega(context, pageReal2);
 
-  const pageFinal = await confirmarGeracao016(context, pageReal2);
+  const pageFinal = await confirmarGeracao016(context, pageAposEnvio);
   const novoCtrc = await capturarNovoCtrc016(context, pageFinal);
 
   await closeExtraPages(context, [menuAtual]);
