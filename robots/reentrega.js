@@ -175,23 +175,28 @@ async function preencherCampoCurtoObrigatorio(target, selector, valor, nomeCampo
     timeout: 30000,
   });
 
-  await loc.click({ force: true }).catch(() => {});
-  await loc.fill("");
+  const valorTratado = String(valor ?? "").trim().toUpperCase();
 
-  await loc.evaluate((el, value) => {
-    el.value = value;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    el.dispatchEvent(new Event("blur", { bubbles: true }));
-  }, String(valor));
+  if (!valorTratado) {
+    throw new Error(`${nomeCampo} vazio. Não vou preencher valor padrão inventado.`);
+  }
+
+  await loc.click({ force: true }).catch(() => {});
+  await loc.press("Control+A").catch(() => {});
+  await loc.press("Backspace").catch(() => {});
+  await loc.type(valorTratado, { delay: 120 });
+  await loc.press("Tab").catch(() => {});
+  await sleep(500);
 
   const valorFinal = await loc.inputValue().catch(() => "");
 
-  if (String(valorFinal).trim().toUpperCase() !== String(valor).trim().toUpperCase()) {
+  if (String(valorFinal).trim().toUpperCase() !== valorTratado) {
     throw new Error(
-      `${nomeCampo} não foi preenchido corretamente. Esperado "${valor}", ficou "${valorFinal}".`
+      `${nomeCampo} não foi preenchido corretamente. Esperado "${valorTratado}", ficou "${valorFinal}".`
     );
   }
+
+  console.log(`${nomeCampo} preenchido: ${valorFinal}`);
 }
 
 async function preencherTela016Reentrega(context, pageTela2, item) {
@@ -200,7 +205,7 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
   const found = await getTargetWithSelector(
     context,
     pageTela2,
-    'input[name="f2"], input[id="2"], input[name="f3"], input[id="3"]',
+    'input[name="f2"], input[id="2"], input[name="f3"], input[id="3"], input[name="f4"], input[id="4"]',
     "tela de reentrega da 016"
   );
 
@@ -211,7 +216,13 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
   const obs2 = normalizeValue(item.obsSsw2);
 
   const localPrestacao = process.env.SSW_LOCAL_PRESTACAO ?? "O";
-  const tipoDocumento = normalizeValue(item.tipoDocumento || "C").toUpperCase();
+  const tipoDocumento = normalizeValue(item.tipoDocumento).toUpperCase();
+
+  if (!tipoDocumento) {
+    throw new Error(
+      `Item ${item.emissaoComplementarId} sem tipoDocumento para reentrega.`
+    );
+  }
 
   await preencherCampoCurtoObrigatorio(
     target,
@@ -220,12 +231,8 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
     "Local de prestação"
   );
 
-  await preencherCampoCurtoObrigatorio(
-    target,
-    'input[name="f3"], input[id="3"]',
-    tipoDocumento,
-    "Tipo do documento"
-  );
+  // f2 dispara getFil(this.value), então espera o SSW terminar antes do f3.
+  await sleep(1500);
 
   await preencherCampoCurtoObrigatorio(
     target,
@@ -236,6 +243,32 @@ async function preencherTela016Reentrega(context, pageTela2, item) {
 
   await fill(target, 'input[name="f7"], input[id="7"]', obs1.slice(0, 55));
   await fill(target, 'input[name="f8"], input[id="8"]', obs2.slice(0, 55));
+
+  // Tipo do documento fica POR ÚLTIMO para não ser limpo pelo getFil.
+  await preencherCampoCurtoObrigatorio(
+    target,
+    'input[name="f3"], input[id="3"]',
+    tipoDocumento,
+    "Tipo do documento"
+  );
+
+  await target
+    .locator('input[name="f6"], input[id="6"]')
+    .first()
+    .click({ force: true })
+    .catch(() => {});
+
+  await sleep(500);
+
+  const tipoFinal = await target
+    .locator('input[name="f3"], input[id="3"]')
+    .first()
+    .inputValue()
+    .catch(() => "");
+
+  if (!String(tipoFinal).trim()) {
+    throw new Error("Tipo do documento ficou vazio antes do envio da reentrega.");
+  }
 
   await debugScreenshot(pageReal, "05_tela_016_reentrega_preenchida.png");
 
