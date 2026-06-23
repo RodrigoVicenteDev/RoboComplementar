@@ -551,16 +551,25 @@ async function enviarPaletizacao(context, pageTela) {
     timeout: 30000,
   });
 
-  // Clique via DOM (el.click) dispara o onclick="ajaxEnvia('GERA_VALE', 0)"
-  // de forma confiável, ao contrário do click({force:true}) do Playwright.
-  await seta.evaluate((el) => el.click());
+  await debugScreenshot(pageReal, "08a_antes_click_seta_final_089.png");
 
-  await sleep(1500);
+  // O SSW usa a global `obj` (setada via onfocus="obj=this;") dentro de
+  // ajaxEnvia. Por isso FOCAMOS a setinha antes de clicar, garantindo que
+  // ajaxEnvia('GERA_VALE', 0) rode com o obj correto. Sem o focus, o obj fica
+  // apontando pro último campo (f6/f7) e o vale não é gerado.
+  await seta.evaluate((el) => {
+    el.focus();
+    el.click();
+  });
+
+  await sleep(2000);
+
+  await debugScreenshot(pageReal, "08b_depois_click_seta_final_089.png");
 
   // Se nada aconteceu (sem modal e sem indicador de processamento), chama
-  // ajaxEnvia('GERA_VALE', 0) diretamente, como faz a reentrega.
+  // ajaxEnvia('GERA_VALE', 0) diretamente — também setando obj na setinha.
   const modalVisivel = await pageReal
-    .locator('div#errormsg, div#errormsglabel, a.dialog:has-text("Continuar")')
+    .locator("div#errormsglabel")
     .first()
     .isVisible()
     .catch(() => false);
@@ -578,7 +587,9 @@ async function enviarPaletizacao(context, pageTela) {
       "⚠️ Após clique final não apareceu modal/processamento. Tentando chamada direta ajaxEnvia('GERA_VALE', 0)..."
     );
 
-    await target.evaluate(() => {
+    await seta.evaluate((el) => {
+      el.focus();
+
       if (typeof ajaxEnvia !== "function") {
         throw new Error("Função ajaxEnvia não encontrada na tela 089.");
       }
@@ -586,9 +597,9 @@ async function enviarPaletizacao(context, pageTela) {
       ajaxEnvia("GERA_VALE", 0);
     });
 
-    await sleep(1500);
+    await sleep(2000);
 
-    await debugScreenshot(pageReal, "08b_depois_ajax_direto_gera_vale_089.png");
+    await debugScreenshot(pageReal, "08c_depois_ajax_direto_gera_vale_089.png");
   }
 
   return pageReal;
