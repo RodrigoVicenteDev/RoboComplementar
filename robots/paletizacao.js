@@ -404,6 +404,35 @@ async function aguardarRetornoTelaPaletizacao(context, pageHint) {
   throw new Error("Não encontrei a tela de paletização após informar o frete.");
 }
 
+async function aguardarProcessamentoSSW(target, timeoutMs = 15000) {
+  // Espera o indicador "Aguarde..." (#procimg) do SSW ficar oculto, indicando
+  // que a requisição AJAX (ex.: getFil) terminou e o form parou de recarregar.
+  try {
+    const proc = target.locator("#procimg").first();
+
+    if ((await proc.count().catch(() => 0)) === 0) {
+      return;
+    }
+
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      const processando = await proc
+        .evaluate((el) => {
+          const style = window.getComputedStyle(el);
+          return style.visibility !== "hidden" && style.display !== "none";
+        })
+        .catch(() => false);
+
+      if (!processando) {
+        return;
+      }
+
+      await sleep(250);
+    }
+  } catch {}
+}
+
 async function preencherFinalPaletizacao(context, pageTela, item) {
   console.log("13) Preenchendo tipo de documento, local da prestação e observação da paletização...");
 
@@ -439,8 +468,10 @@ async function preencherFinalPaletizacao(context, pageTela, item) {
         "O"
       );
 
-      // f5 dispara getFil(this.value); espera o SSW terminar antes do f6.
-      await sleep(1500);
+      // f5 dispara getFil(this.value); espera o SSW terminar de processar
+      // (indicador "Aguarde..." #procimg) antes de preencher o f6.
+      await sleep(800);
+      await aguardarProcessamentoSSW(target);
     }
   }
 
@@ -451,26 +482,47 @@ async function preencherFinalPaletizacao(context, pageTela, item) {
     await fill(target, 'input[name="f8"], input[id="8"]', obs.slice(0, 70));
   }
 
-  // 3) Tipo do documento (f6) POR ÚLTIMO, para não ser limpo pelo getFil.
+  // 3) Tipo do documento (f6) POR ÚLTIMO, com retentativas: o getFil do f5 e
+  // o recarregamento do form (após informar o frete) podem limpar o campo de
+  // forma assíncrona, então redigitamos até o valor "grudar".
   const campoTipoDoc = target.locator('input[name="f6"], input[id="6"]').first();
 
-  await campoTipoDoc.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
+  let tipoFinal = "";
+  const maxTentativas = 5;
 
-  await campoTipoDoc.click({ force: true }).catch(() => {});
-  await campoTipoDoc.press("Control+A").catch(() => {});
-  await campoTipoDoc.press("Backspace").catch(() => {});
-  await campoTipoDoc.type(tipoDocumento, { delay: 120 });
-  await campoTipoDoc.press("Tab").catch(() => {});
-  await sleep(500);
+  for (let tentativa = 1; tentativa <= maxTentativas; tentativa++) {
+    await campoTipoDoc.waitFor({
+      state: "visible",
+      timeout: 30000,
+    });
 
-  const tipoFinal = await campoTipoDoc.inputValue().catch(() => "");
+    await aguardarProcessamentoSSW(target);
+
+    await campoTipoDoc.click({ force: true }).catch(() => {});
+    await campoTipoDoc.press("Control+A").catch(() => {});
+    await campoTipoDoc.press("Backspace").catch(() => {});
+    await campoTipoDoc.type(tipoDocumento, { delay: 120 });
+    await campoTipoDoc.press("Tab").catch(() => {});
+    await sleep(800);
+
+    tipoFinal = await campoTipoDoc.inputValue().catch(() => "");
+
+    if (String(tipoFinal).trim().toUpperCase() === tipoDocumento) {
+      break;
+    }
+
+    console.log(
+      `⚠️ Tipo do documento ficou "${tipoFinal}" na tentativa ${tentativa}/${maxTentativas}. Repreenchendo...`
+    );
+
+    await sleep(700);
+  }
 
   if (String(tipoFinal).trim().toUpperCase() !== tipoDocumento) {
+    await debugScreenshot(pageReal, "08_falha_tipo_documento_089.png");
+
     throw new Error(
-      `Tipo do documento da paletização não foi preenchido corretamente. Esperado "${tipoDocumento}", ficou "${tipoFinal}".`
+      `Tipo do documento da paletização não foi preenchido corretamente após ${maxTentativas} tentativas. Esperado "${tipoDocumento}", ficou "${tipoFinal}".`
     );
   }
 
