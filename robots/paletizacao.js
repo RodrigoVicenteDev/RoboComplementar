@@ -489,6 +489,7 @@ async function enviarPaletizacao(context, pageTela) {
     "setinha final paletização"
   );
 
+  const pageReal = found.page;
   const target = found.target;
 
   const seta = target.locator('a[id="9"]').first();
@@ -498,9 +499,47 @@ async function enviarPaletizacao(context, pageTela) {
     timeout: 30000,
   });
 
-  await seta.click({ force: true });
+  // Clique via DOM (el.click) dispara o onclick="ajaxEnvia('GERA_VALE', 0)"
+  // de forma confiável, ao contrário do click({force:true}) do Playwright.
+  await seta.evaluate((el) => el.click());
 
-  return found.page;
+  await sleep(1500);
+
+  // Se nada aconteceu (sem modal e sem indicador de processamento), chama
+  // ajaxEnvia('GERA_VALE', 0) diretamente, como faz a reentrega.
+  const modalVisivel = await pageReal
+    .locator('div#errormsg, div#errormsglabel, a.dialog:has-text("Continuar")')
+    .first()
+    .isVisible()
+    .catch(() => false);
+
+  const processando = await pageReal
+    .locator("#procimg")
+    .evaluate((el) => {
+      const style = window.getComputedStyle(el);
+      return style.visibility !== "hidden" && style.display !== "none";
+    })
+    .catch(() => false);
+
+  if (!modalVisivel && !processando) {
+    console.log(
+      "⚠️ Após clique final não apareceu modal/processamento. Tentando chamada direta ajaxEnvia('GERA_VALE', 0)..."
+    );
+
+    await target.evaluate(() => {
+      if (typeof ajaxEnvia !== "function") {
+        throw new Error("Função ajaxEnvia não encontrada na tela 089.");
+      }
+
+      ajaxEnvia("GERA_VALE", 0);
+    });
+
+    await sleep(1500);
+
+    await debugScreenshot(pageReal, "08b_depois_ajax_direto_gera_vale_089.png");
+  }
+
+  return pageReal;
 }
 
 async function aguardarValePalletGerado(context, pageHint) {
