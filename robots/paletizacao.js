@@ -417,6 +417,16 @@ async function preencherFinalPaletizacao(context, pageTela, item) {
   const pageReal = found.page;
   const target = found.target;
 
+  const tipoDocumento = normalizeValue(item.tipoDocumento).toUpperCase();
+
+  if (!tipoDocumento) {
+    throw new Error(
+      `Item ${item.emissaoComplementarId || ""} sem tipoDocumento para paletização.`
+    );
+  }
+
+  // 1) Local da prestação (f5) PRIMEIRO. Esse campo dispara getFil(this.value),
+  // que limpa o Tipo do documento, então preenchemos ele antes e esperamos o SSW.
   const localPrestacao = target.locator('input[name="f5"], input[id="5"]').first();
 
   if (await localPrestacao.isVisible().catch(() => false)) {
@@ -428,19 +438,40 @@ async function preencherFinalPaletizacao(context, pageTela, item) {
         'input[name="f5"], input[id="5"]',
         "O"
       );
+
+      // f5 dispara getFil(this.value); espera o SSW terminar antes do f6.
+      await sleep(1500);
     }
   }
 
-  await setInputOrValidate(
-    target,
-    'input[name="f6"], input[id="6"]',
-    item.tipoDocumento
-  );
-
+  // 2) Observação (f8) antes do Tipo do documento.
   const obs = normalizeValue(item.obsSsw1 || item.obsSsw2 || item.obsSsw3);
 
   if (obs) {
     await fill(target, 'input[name="f8"], input[id="8"]', obs.slice(0, 70));
+  }
+
+  // 3) Tipo do documento (f6) POR ÚLTIMO, para não ser limpo pelo getFil.
+  const campoTipoDoc = target.locator('input[name="f6"], input[id="6"]').first();
+
+  await campoTipoDoc.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
+
+  await campoTipoDoc.click({ force: true }).catch(() => {});
+  await campoTipoDoc.press("Control+A").catch(() => {});
+  await campoTipoDoc.press("Backspace").catch(() => {});
+  await campoTipoDoc.type(tipoDocumento, { delay: 120 });
+  await campoTipoDoc.press("Tab").catch(() => {});
+  await sleep(500);
+
+  const tipoFinal = await campoTipoDoc.inputValue().catch(() => "");
+
+  if (String(tipoFinal).trim().toUpperCase() !== tipoDocumento) {
+    throw new Error(
+      `Tipo do documento da paletização não foi preenchido corretamente. Esperado "${tipoDocumento}", ficou "${tipoFinal}".`
+    );
   }
 
   await debugScreenshot(pageReal, "08_tela_089_final_preenchida.png");
