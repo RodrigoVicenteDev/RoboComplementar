@@ -292,66 +292,40 @@ async function continuarAvisoTela222(
     "12) Esperando aviso de conferência..."
   );
 
-  const found = await getTargetWithSelector(
-    context,
-    pageTela2,
-    'div#errormsg, a[id="0"]',
-    "aviso de conferência da 222",
-    30000
-  );
-
-  const pageReal = found.page;
-  const target = found.target;
-
-  const aviso = target
-    .locator("div#errormsg")
-    .first();
-
-  await aviso.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
-  const textoAviso = await aviso
-    .innerText()
-    .catch(() => "");
-
-  console.log(
-    "Aviso detectado:",
-    textoAviso.replace(/\s+/g, " ").trim()
-  );
-
-  const continuar = target
-    .locator('a[id="0"]')
-    .first();
-
-  await continuar.waitFor({
-    state: "visible",
-    timeout: 30000,
-  });
-
-  await continuar.click({
-    force: true,
-  });
-
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + 90000;
+  const MAX_AVISOS = 10;
+  let avisosTratados = 0;
 
   while (Date.now() < deadline) {
+    // Primeiro, verifica se o aviso final (Novo CTRC) já apareceu.
     const pages = context
       .pages()
       .filter((p) => !p.isClosed());
 
     for (const p of pages) {
       try {
-        const label = p
-          .locator("div#errormsglabel")
-          .first();
+        const targets = [p];
 
-        const count = await label
-          .count()
-          .catch(() => 0);
+        const fr = await findFrameWithSelector(
+          p,
+          "div#errormsglabel"
+        );
 
-        if (count > 0) {
+        if (fr) {
+          targets.push(fr);
+        }
+
+        for (const t of targets) {
+          const label = t
+            .locator("div#errormsglabel")
+            .first();
+
+          const count = await label
+            .count()
+            .catch(() => 0);
+
+          if (count === 0) continue;
+
           const visible = await label
             .isVisible()
             .catch(() => false);
@@ -367,33 +341,77 @@ async function continuarAvisoTela222(
             return p;
           }
         }
+      } catch {}
+    }
+
+    // Ainda não é o aviso final: procura um aviso intermediário
+    // (conferência de parcelas, CFOP 6932/SEFAZ MG, etc.) e
+    // clica em "2. Continuar" (a[id="0"]).
+    let target = null;
+
+    for (const p of pages) {
+      try {
+        const countMain = await p
+          .locator('div#errormsg a[id="0"]')
+          .count()
+          .catch(() => 0);
+
+        if (countMain > 0) {
+          target = p;
+          break;
+        }
 
         const fr = await findFrameWithSelector(
           p,
-          "div#errormsglabel"
+          'div#errormsg a[id="0"]'
         );
 
         if (fr) {
-          const frameLabel = fr
-            .locator("div#errormsglabel")
-            .first();
-
-          const visible = await frameLabel
-            .isVisible()
-            .catch(() => false);
-
-          const texto = await frameLabel
-            .innerText()
-            .catch(() => "");
-
-          if (
-            visible &&
-            texto.includes("Novo CTRC:")
-          ) {
-            return p;
-          }
+          target = fr;
+          break;
         }
       } catch {}
+    }
+
+    if (target) {
+      const aviso = target
+        .locator("div#errormsg")
+        .first();
+
+      const visivel = await aviso
+        .isVisible()
+        .catch(() => false);
+
+      if (visivel) {
+        const textoAviso = await aviso
+          .innerText()
+          .catch(() => "");
+
+        console.log(
+          `Aviso intermediário detectado:`,
+          textoAviso.replace(/\s+/g, " ").trim()
+        );
+
+        const continuar = target
+          .locator('a[id="0"]')
+          .first();
+
+        await continuar
+          .click({ force: true })
+          .catch(() => {});
+
+        avisosTratados += 1;
+
+        if (avisosTratados >= MAX_AVISOS) {
+          throw new Error(
+            "Muitos avisos intermediários na 222; abortando para evitar loop."
+          );
+        }
+
+        // Dá tempo do próximo aviso (ou o final) renderizar.
+        await sleep(500);
+        continue;
+      }
     }
 
     await sleep(250);
