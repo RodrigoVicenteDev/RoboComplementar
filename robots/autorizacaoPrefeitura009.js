@@ -161,7 +161,7 @@ async function clicarAutorizadosSemImpressaoMeus(context, page009) {
   return pageReal;
 }
 
-async function executar({ context, menuPage }) {
+async function executar({ context, menuPage, esperaAutorizacaoMs }) {
   console.log("======================================");
   console.log("🤖 Pós-processamento 009 iniciado");
   console.log("======================================");
@@ -173,8 +173,9 @@ async function executar({ context, menuPage }) {
 
   const pageAposEnvio = await clicarEnviarPrefeituraMeus(context, page009);
 
-  console.log("Pós-processamento 009) Aguardando 60 segundos...");
-  await sleep(60000);
+  const espera = Number(esperaAutorizacaoMs ?? 60000);
+  console.log(`Pós-processamento 009) Aguardando ${Math.round(espera / 1000)} segundos...`);
+  await sleep(espera);
 
   await clicarAutorizadosSemImpressaoMeus(context, pageAposEnvio);
 

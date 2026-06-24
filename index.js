@@ -92,6 +92,29 @@ async function trocarUnidadeMenu(context, menuPage, unidade) {
   return found.page;
 }
 
+async function executarPosDescarga(context, menuPage, unidade, numeroDocumento) {
+  const isPrefeitura = String(numeroDocumento ?? "").trim().startsWith("999");
+  const autorizacao = isPrefeitura ? autorizacaoPrefeitura009 : autorizacaoSefaz007;
+
+  console.log("======================================");
+  console.log(`🤖 Pós-processamento imediato da DESCARGA | Unidade ${unidade} | Doc ${numeroDocumento}`);
+  console.log(`Documento ${numeroDocumento} → ${isPrefeitura ? "Prefeitura (009)" : "SEFAZ (007)"}`);
+  console.log("======================================");
+
+  let menuAtual = await trocarUnidadeMenu(context, menuPage, unidade);
+  await closeExtraPages(context, [menuAtual]);
+
+  await autorizacao.executar({ context, menuPage: menuAtual, esperaAutorizacaoMs: 3000 }); // 7 OU 9
+  menuAtual = await recoverMenuPage(context);
+  await closeExtraPages(context, [menuAtual]);
+
+  await capaComprovante040.executar({ context, menuPage: menuAtual }); // depois o 40
+  menuAtual = await recoverMenuPage(context);
+  await closeExtraPages(context, [menuAtual]);
+
+  return menuAtual;
+}
+
 async function executarPosProcessamentos(context, menuPage, unidadesProcessadas) {
   console.log("======================================");
   console.log("🤖 Iniciando pós-processamentos");
@@ -207,7 +230,10 @@ async function run() {
       const robo = robots[item.robo];
 
     const parsedCtrc = parseCtrcComDv(item.ctrc);
-    unidadesProcessadas.add(parsedCtrc.sigla);
+    // descarga é pós-processada na hora; as demais vão pro lote final
+    if (item.motivoSSW !== "D") {
+      unidadesProcessadas.add(parsedCtrc.sigla);
+    }
 
       if (!robo) {
         throw new Error(`Robô não registrado: ${item.robo}`);
@@ -234,6 +260,24 @@ async function run() {
         console.log(
           `✅ Emissão ${item.emissaoComplementarId} registrada como EMITIDA | Documento ${resultado.numeroDocumentoGerado}`
         );
+
+        if (item.motivoSSW === "D") {
+          try {
+            menuPage = await executarPosDescarga(
+              context,
+              menuPage,
+              parsedCtrc.sigla,
+              resultado.numeroDocumentoGerado
+            );
+          } catch (posErr) {
+            console.error(
+              "⚠️ Erro no pós-processamento imediato da descarga:",
+              posErr?.stack || posErr
+            );
+            menuPage = await recoverMenuPage(context);
+            await closeExtraPages(context, [menuPage]);
+          }
+        }
       } catch (err) {
         erros++;
 
