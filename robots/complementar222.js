@@ -348,6 +348,7 @@ async function continuarAvisoTela222(
     // (conferência de parcelas, CFOP 6932/SEFAZ MG, etc.) e
     // clica em "2. Continuar" (a[id="0"]).
     let target = null;
+    let targetPage = null;
 
     for (const p of pages) {
       try {
@@ -358,6 +359,7 @@ async function continuarAvisoTela222(
 
         if (countMain > 0) {
           target = p;
+          targetPage = p;
           break;
         }
 
@@ -368,6 +370,7 @@ async function continuarAvisoTela222(
 
         if (fr) {
           target = fr;
+          targetPage = p;
           break;
         }
       } catch {}
@@ -391,6 +394,14 @@ async function continuarAvisoTela222(
           `Aviso intermediário detectado:`,
           textoAviso.replace(/\s+/g, " ").trim()
         );
+
+        // Para Descarga, o SSW apresenta o "Novo CTRC" dentro do
+        // div#errormsg (mesmo elemento dos avisos intermediários),
+        // com um link "7. OK" (a[id="0"]). Retorna sem clicar para
+        // que capturarNovoCtrc possa ler o número do aviso.
+        if (textoAviso.includes("Novo CTRC:")) {
+          return targetPage;
+        }
 
         const continuar = target
           .locator('a[id="0"]')
@@ -428,19 +439,35 @@ async function capturarNovoCtrc(
 ) {
   console.log("13) Capturando Novo CTRC...");
 
-  const found = await getTargetWithSelector(
-    context,
-    pageHint,
-    "div#errormsglabel",
-    "aviso final com Novo CTRC",
-    30000
-  );
+  // Fluxo padrão (Dedicado, Estadia): Novo CTRC em div#errormsglabel.
+  // Descarga: SSW usa div#errormsg (mesmo popup dos avisos intermediários).
+  let found, labelSel;
+
+  try {
+    found = await getTargetWithSelector(
+      context,
+      pageHint,
+      "div#errormsglabel",
+      "aviso final com Novo CTRC",
+      5000
+    );
+    labelSel = "div#errormsglabel";
+  } catch {
+    found = await getTargetWithSelector(
+      context,
+      pageHint,
+      "div#errormsg",
+      "aviso final com Novo CTRC (errormsg)",
+      25000
+    );
+    labelSel = "div#errormsg";
+  }
 
   const pageReal = found.page;
   const target = found.target;
 
   const label = target
-    .locator("div#errormsglabel")
+    .locator(labelSel)
     .first();
 
   await label.waitFor({
