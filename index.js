@@ -12,7 +12,7 @@ const {
   registrarErro,
 } = require("./apiDago");
 
-const { loginSSW, recoverMenuPage } = require("./ssw/session");
+const { loginSSW, recoverMenuPage, resetSessaoCompleta } = require("./ssw/session");
 const {
   sleep,
   closeExtraPages,
@@ -30,6 +30,7 @@ const autorizacaoPrefeitura009 = require("./robots/autorizacaoPrefeitura009");
 const capaComprovante040 = require("./robots/capaComprovante040");
 
 const HEADLESS = String(process.env.HEADLESS ?? "1").trim() !== "0";
+const MAX_ERROS_CONSECUTIVOS = Number(process.env.MAX_ERROS_CONSECUTIVOS ?? 3);
 
 const robots = {
   complementar222,
@@ -167,11 +168,10 @@ async function executarPosProcessamentos(context, menuPage, unidadesProcessadas)
         );
 
         try {
-          menuAtual = await recoverMenuPage(context);
-          await closeExtraPages(context, [menuAtual]);
+          menuAtual = await resetSessaoCompleta(context);
         } catch (recoverErr) {
           console.error(
-            `⚠️ Não consegui recuperar o menu após erro no pós-processamento ${pos.nome}:`,
+            `⚠️ Não consegui recuperar a sessão após erro no pós-processamento ${pos.nome}:`,
             recoverErr?.stack || recoverErr
           );
         }
@@ -215,6 +215,7 @@ async function run() {
     let processadas = 0;
     let emitidas = 0;
     let erros = 0;
+    let errosConsecutivos = 0;
 
     const unidadesProcessadas = new Set();
 
@@ -256,6 +257,7 @@ async function run() {
 
         processadas++;
         emitidas++;
+        errosConsecutivos = 0;
 
         console.log(
           `✅ Emissão ${item.emissaoComplementarId} registrada como EMITIDA | Documento ${resultado.numeroDocumentoGerado}`
@@ -274,12 +276,12 @@ async function run() {
               "⚠️ Erro no pós-processamento imediato da descarga:",
               posErr?.stack || posErr
             );
-            menuPage = await recoverMenuPage(context);
-            await closeExtraPages(context, [menuPage]);
+            menuPage = await resetSessaoCompleta(context);
           }
         }
       } catch (err) {
         erros++;
+        errosConsecutivos++;
 
         console.error(
           `❌ Erro na emissão ${item.emissaoComplementarId} | CTRC ${item.ctrc}:`,
@@ -301,12 +303,18 @@ async function run() {
           );
         }
 
+        if (errosConsecutivos >= MAX_ERROS_CONSECUTIVOS) {
+          console.error(
+            `🛑 ${errosConsecutivos} erros consecutivos — problema sistêmico (SSW fora do ar, tela alterada, sessão inválida?). Abortando a rodada; emissões restantes ficam pendentes para a próxima execução.`
+          );
+          break;
+        }
+
         try {
-          menuPage = await recoverMenuPage(context);
-          await closeExtraPages(context, [menuPage]);
+          menuPage = await resetSessaoCompleta(context);
         } catch (recoverErr) {
           console.error(
-            "❌ Falha ao recuperar menu após erro:",
+            "❌ Falha ao recuperar sessão após erro:",
             recoverErr?.stack || recoverErr
           );
 
@@ -317,11 +325,15 @@ async function run() {
       await sleep(1000);
     }
 
-    menuPage = await executarPosProcessamentos(
-  context,
-  menuPage,
-  unidadesProcessadas
-);
+    if (errosConsecutivos >= MAX_ERROS_CONSECUTIVOS) {
+      console.log("⏭️ Pós-processamentos pulados por causa da rodada abortada.");
+    } else {
+      menuPage = await executarPosProcessamentos(
+        context,
+        menuPage,
+        unidadesProcessadas
+      );
+    }
 
     console.log("======================================");
     console.log("Fim do processamento REAL");

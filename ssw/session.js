@@ -161,6 +161,28 @@ async function findMenuPage(context) {
   return null;
 }
 
+async function resetSessaoCompleta(context) {
+  console.log("🔄 Reset completo da sessão SSW: fechando tudo e refazendo login...");
+
+  for (const p of context.pages()) {
+    await p.close().catch(() => {});
+  }
+
+  const newPage = await context.newPage();
+
+  await loginSSW(newPage);
+
+  const menu = await findMenuPage(context);
+
+  if (!menu) {
+    throw new Error("Reset completo falhou: menu não encontrado após relogin.");
+  }
+
+  console.log("✅ Sessão SSW recuperada com relogin completo.");
+
+  return menu;
+}
+
 async function recoverMenuPage(context) {
   const existing = await findMenuPage(context);
 
@@ -190,4 +212,5 @@ module.exports = {
   typeMenuOption,
   findMenuPage,
   recoverMenuPage,
+  resetSessaoCompleta,
 };
