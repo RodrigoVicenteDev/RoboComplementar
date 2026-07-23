@@ -33,6 +33,14 @@ function normalizarTipoComplementar(tipo) {
     };
   }
 
+  if (value.includes("ARMAZENAGEM")) {
+    return {
+      robo: "complementar222",
+      motivoSSW: "C",
+      opcaoSSW: "222",
+    };
+  }
+
   if (value.includes("REENTREGA")) {
   return {
     robo: "reentrega",
