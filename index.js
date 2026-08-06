@@ -3,6 +3,7 @@ require("dotenv").config();
 const { chromium } = require("playwright");
 
 const { setupLogger } = require("./utils/logger");
+const { limparAntigos } = require("./utils/limpeza");
 const { normalizarTipoComplementar } = require("./utils/normalizers");
 
 const {
@@ -187,6 +188,10 @@ async function executarPosProcessamentos(context, menuPage, unidadesProcessadas)
 }
 async function run() {
   const { LOG_FILE } = setupLogger();
+
+  // apaga logs e imagens de debug com mais de 4 dias
+  limparAntigos("logs", 4);
+  limparAntigos("debug", 4);
 
   console.log("🤖 Robô REAL de emissão complementar iniciado");
   console.log("API:", process.env.DAGO_API_BASE ?? "https://api.paineldg.com.br");

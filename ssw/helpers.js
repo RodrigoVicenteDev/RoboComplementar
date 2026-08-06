@@ -19,7 +19,9 @@ function debugPath(name) {
 async function debugScreenshot(page, filename) {
   if (!DEBUG || !page || page.isClosed()) return;
 
-  const out = debugPath(filename);
+  // prefixa a data de geração no nome do arquivo (ex: 2026-08-06_debug_antes_222.png)
+  const stamp = new Date().toISOString().slice(0, 10);
+  const out = debugPath(`${stamp}_${filename}`);
 
   await page.screenshot({
     path: out,
