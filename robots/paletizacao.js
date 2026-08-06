@@ -17,6 +17,18 @@ const {
   normalizeValue,
 } = require("../utils/formatters");
 
+// Quanto tempo esperar o aviso final "Vale Pallet gerado" antes de desistir.
+// Aumentado de 30s p/ 90s: em horário de SSW lento (ex.: cron noturno) o aviso
+// demorava mais que a janela e o robô marcava erro mesmo tendo emitido tudo.
+const TIMEOUT_VALE_PALLET_MS = Number(
+  process.env.SSW_TIMEOUT_VALE_PALLET_MS ?? 90000
+);
+
+// "gerad" casa com "gerado" (singular) e "gerados" (plural: "CTRC ... e Vale
+// Pallet ... gerados."). Antes algumas branches usavam /gerado/i e perdiam o
+// plural, causando falso-negativo mesmo com o aviso presente.
+const RE_VALE_GERADO = /gerad/i;
+
 async function verificarErroFuncionalPaletizacao(context, pageHint) {
   const pages = context.pages().filter((p) => !p.isClosed());
 
@@ -608,7 +620,7 @@ async function enviarPaletizacao(context, pageTela) {
 async function aguardarValePalletGerado(context, pageHint) {
   console.log("15) Aguardando Vale Pallet gerado...");
 
-  const deadline = Date.now() + 30000;
+  const deadline = Date.now() + TIMEOUT_VALE_PALLET_MS;
 
   while (Date.now() < deadline) {
     const pages = context.pages().filter((p) => !p.isClosed());
@@ -620,7 +632,7 @@ async function aguardarValePalletGerado(context, pageHint) {
         if (await label.isVisible().catch(() => false)) {
           const texto = await label.innerText().catch(() => "");
 
-          if (/Vale\s+Pallet/i.test(texto) && /gerad?/i.test(texto)) {
+          if (/Vale\s+Pallet/i.test(texto) && RE_VALE_GERADO.test(texto)) {
             return p;
           }
         }
@@ -631,7 +643,7 @@ async function aguardarValePalletGerado(context, pageHint) {
           const frameLabel = fr.locator("div#errormsglabel").first();
           const texto = await frameLabel.innerText().catch(() => "");
 
-          if (/Vale\s+Pallet/i.test(texto) && /gerado/i.test(texto)) {
+          if (/Vale\s+Pallet/i.test(texto) && RE_VALE_GERADO.test(texto)) {
             return p;
           }
         }
@@ -643,7 +655,7 @@ async function aguardarValePalletGerado(context, pageHint) {
         const label = pageHint.locator("div#errormsglabel").first();
         const texto = await label.innerText().catch(() => "");
 
-        if (/Vale\s+Pallet/i.test(texto) && /gerado/i.test(texto)) {
+        if (/Vale\s+Pallet/i.test(texto) && RE_VALE_GERADO.test(texto)) {
           return pageHint;
         }
       } catch {}

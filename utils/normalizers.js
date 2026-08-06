@@ -41,6 +41,16 @@ function normalizarTipoComplementar(tipo) {
     };
   }
 
+  // Complementar genérico: motivo "C" na opção 222 (mesma legenda do SSW,
+  // C = complementar). Precisa vir antes do PALETIZ/REENTREGA para não colidir.
+  if (value.includes("COMPLEMENTAR")) {
+    return {
+      robo: "complementar222",
+      motivoSSW: "C",
+      opcaoSSW: "222",
+    };
+  }
+
   if (value.includes("REENTREGA")) {
   return {
     robo: "reentrega",

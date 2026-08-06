@@ -69,6 +69,54 @@ async function fill(target, selector, value) {
   await loc.fill(String(value));
 }
 
+// Preenche um campo digitando caractere a caractere e confere o valor final,
+// com retries. Criado para campos do SSW que possuem onkeyup/máscara e que,
+// quando o servidor está lento, "engolem" parte do que foi digitado (ex.: o
+// CTRC da tela 222 ficava "417" em vez de "4173953"). Digitação humana e
+// releitura resolvem essa flakiness de timing.
+async function fillAndVerify(target, selector, value, opts = {}) {
+  const desired = String(value);
+  const label = opts.label || selector;
+  const retries = opts.retries ?? 3;
+  const typeDelay = opts.typeDelay ?? 40;
+
+  const loc = target.locator(selector).first();
+
+  await loc.waitFor({
+    state: "visible",
+    timeout: 30000,
+  });
+
+  let last = "";
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    await loc.click({ clickCount: 3 }).catch(() => {});
+    await loc.fill("").catch(() => {});
+    await loc.pressSequentially(desired, { delay: typeDelay }).catch(() => {});
+
+    // dá tempo do onkeyup/AJAX do SSW processar antes de reler
+    await sleep(300);
+
+    last = await loc
+      .evaluate((el) => ("value" in el ? el.value ?? "" : ""))
+      .catch(() => "");
+
+    if (String(last).trim() === desired.trim()) {
+      return;
+    }
+
+    console.log(
+      `⚠️ ${label}: tentativa ${attempt}/${retries} ficou "${last}", esperado "${desired}". Repetindo...`
+    );
+
+    await sleep(500);
+  }
+
+  throw new Error(
+    `Não consegui preencher ${label}: campo ficou "${last}", esperado "${desired}".`
+  );
+}
+
 async function getInputState(target, selector) {
   const loc = target.locator(selector).first();
 
@@ -321,6 +369,7 @@ module.exports = {
   debugFrames,
   debugContextPages,
   fill,
+  fillAndVerify,
   setInputOrValidate,
   findFrameWithSelector,
   waitForFrameWithSelector,

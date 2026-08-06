@@ -1,5 +1,6 @@
 const {
   fill,
+  fillAndVerify,
   setInputOrValidate,
   getTargetWithSelector,
   openAfterAction,
@@ -111,16 +112,18 @@ async function preencherTela222Inicial(
     item.motivoSSW
   );
 
-  await fill(
+  await fillAndVerify(
     target,
     'input[name="f1"], input[id="1"]',
-    parsed.sigla
+    parsed.sigla,
+    { label: "sigla CTRC (222 inicial)" }
   );
 
-  await fill(
+  await fillAndVerify(
     target,
     'input[name="f2"], input[id="2"]',
-    parsed.semHifenComDv
+    parsed.semHifenComDv,
+    { label: "número CTRC (222 inicial)" }
   );
 
   await debugScreenshot(
