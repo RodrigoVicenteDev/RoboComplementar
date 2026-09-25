@@ -219,6 +219,25 @@ async function closeExtraPages(context, keepPages = []) {
   }
 }
 
+// Lê o popup de erro do SSW (div#errorpanel). Quando ele está aberto, cobre a tela e
+// intercepta os cliques — sem isso o robô só via "Timeout 30000ms" e o motivo real
+// (ex.: "CTRC cancelado") se perdia. Retorna o texto ou null se não há erro visível.
+async function lerErroSsw(target) {
+  const panel = target.locator("div#errorpanel").first();
+
+  if (!(await panel.isVisible().catch(() => false))) return null;
+
+  for (const sel of ["div#errormsglabel", "div#errormsg", "div#errorpanel"]) {
+    const loc = target.locator(sel).first();
+    if (!(await loc.isVisible().catch(() => false))) continue;
+
+    const texto = (await loc.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+    if (texto) return texto;
+  }
+
+  return null;
+}
+
 async function getTargetWithSelector(
   context,
   pageHint,
@@ -379,4 +398,5 @@ module.exports = {
   closeExtraPages,
   getTargetWithSelector,
   openAfterAction,
+  lerErroSsw,
 };

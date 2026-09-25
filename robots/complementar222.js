@@ -8,6 +8,7 @@ const {
   debugScreenshot,
   debugWriteFile,
   findFrameWithSelector,
+  lerErroSsw,
   sleep,
 } = require("../ssw/helpers");
 
@@ -161,7 +162,7 @@ async function avancarTela222Inicial(
     'a[id="2"]',
   ].join(", ");
 
-  const pageTela2 = await openAfterAction({
+  const abrirTela2 = () => openAfterAction({
     context,
     currentPage: pageReal,
     selector: selectorTela2,
@@ -175,9 +176,39 @@ async function avancarTela222Inicial(
         timeout: 30000,
       });
 
-      await seta.click();
+      // O SSW valida o CTRC ao digitar; se recusou (cancelado, inexistente...),
+      // o popup de erro já está aberto por cima da setinha.
+      const erroAntes = await lerErroSsw(target);
+      if (erroAntes) {
+        await debugScreenshot(pageReal, "erro_ssw_222_inicial.png");
+        throw new Error(`SSW: ${erroAntes}`);
+      }
+
+      try {
+        await seta.click({ timeout: 15000 });
+      } catch (e) {
+        const erroSsw = await lerErroSsw(target);
+        if (erroSsw) {
+          await debugScreenshot(pageReal, "erro_ssw_222_inicial.png");
+          throw new Error(`SSW: ${erroSsw}`);
+        }
+        throw e;
+      }
     },
   });
+
+  let pageTela2;
+
+  try {
+    pageTela2 = await abrirTela2();
+  } catch (e) {
+    // Erro que o SSW só mostra depois do clique (a 2ª tela não abre).
+    if (!String(e?.message ?? "").startsWith("SSW:")) {
+      const erroDepois = await lerErroSsw(target);
+      if (erroDepois) throw new Error(`SSW: ${erroDepois}`);
+    }
+    throw e;
+  }
 
   await debugScreenshot(
     pageTela2,
