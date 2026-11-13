@@ -30,7 +30,7 @@ const autorizacaoSefaz007 = require("./robots/autorizacaoSefaz007");
 const autorizacaoPrefeitura009 = require("./robots/autorizacaoPrefeitura009");
 const capaComprovante040 = require("./robots/capaComprovante040");
 
-const HEADLESS = String(process.env.HEADLESS ?? "1").trim() !== "0";
+const HEADLESS = false; // SSW recusa navegador headless (403)
 const MAX_ERROS_CONSECUTIVOS = Number(process.env.MAX_ERROS_CONSECUTIVOS ?? 3);
 
 const robots = {
